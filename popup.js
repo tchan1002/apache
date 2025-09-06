@@ -30,12 +30,14 @@ const errorEl = document.getElementById('error');
 const errorTextEl = document.getElementById('error-text');
 const debugEl = document.getElementById('debug');
 const debugContentEl = document.getElementById('debug-content');
+const copyLogBtnEl = document.getElementById('copy-log-btn');
 const clearLogBtnEl = document.getElementById('clear-log-btn');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
   analyzeBtnEl.addEventListener('click', handleAnalyze);
   queryBtnEl.addEventListener('click', handleQuery);
+  copyLogBtnEl.addEventListener('click', copyDebugLog);
   clearLogBtnEl.addEventListener('click', clearDebugLog);
   
   // Load persistent state
@@ -219,6 +221,7 @@ function showQueryButton() {
   // Show query button and input section
   setTimeout(() => {
     queryBtnEl.classList.remove('hidden');
+    questionInputEl.classList.remove('hidden');
     questionSectionEl.classList.remove('hidden');
   }, 200);
 }
@@ -657,4 +660,43 @@ function addDebugLog(message) {
 
 function clearDebugLog() {
   debugContentEl.textContent = '';
+}
+
+// Copy debug log to clipboard
+async function copyDebugLog() {
+  try {
+    const logText = debugContentEl.textContent;
+    if (!logText.trim()) {
+      addDebugLog('🍂 No log content to copy');
+      return;
+    }
+    
+    await navigator.clipboard.writeText(logText);
+    addDebugLog('📋 Log copied to clipboard!');
+    
+    // Visual feedback - briefly change button text
+    const originalText = copyLogBtnEl.textContent;
+    copyLogBtnEl.textContent = '✅ Copied!';
+    copyLogBtnEl.style.background = '#10b981';
+    
+    setTimeout(() => {
+      copyLogBtnEl.textContent = originalText;
+      copyLogBtnEl.style.background = '#3b82f6';
+    }, 1500);
+    
+  } catch (error) {
+    addDebugLog(`🍂 Failed to copy log: ${error.message}`);
+    
+    // Fallback: try to select the text
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(debugContentEl);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      addDebugLog('📋 Log selected - use Ctrl+C to copy');
+    } catch (fallbackError) {
+      addDebugLog(`🍂 Copy fallback failed: ${fallbackError.message}`);
+    }
+  }
 }

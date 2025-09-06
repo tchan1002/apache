@@ -345,15 +345,32 @@
       align-items: center;
     }
     
-    .clear-log-btn {
+    .debug-buttons {
+      display: flex;
+      gap: 6px;
+    }
+    
+    .copy-log-btn, .clear-log-btn {
       padding: 4px 8px;
-      background: #ef4444;
-      color: white;
       border: none;
       border-radius: 4px;
       font-size: 11px;
       cursor: pointer;
       transition: background-color 0.2s;
+    }
+    
+    .copy-log-btn {
+      background: #1a1a1a;
+      color: white;
+    }
+    
+    .copy-log-btn:hover {
+      background: #404040;
+    }
+    
+    .clear-log-btn {
+      background: #ef4444;
+      color: white;
     }
     
     .clear-log-btn:hover {
@@ -449,7 +466,10 @@
   <div id="debug" class="debug">
     <div class="debug-header">
       🌿 Trail Log
-      <button id="clear-log-btn" class="clear-log-btn">Clear</button>
+      <div class="debug-buttons">
+        <button id="copy-log-btn" class="copy-log-btn">📋 Copy</button>
+        <button id="clear-log-btn" class="clear-log-btn">Clear</button>
+      </div>
     </div>
     <div id="debug-content" class="debug-content"></div>
   </div>
