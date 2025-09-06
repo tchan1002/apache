@@ -9,6 +9,7 @@ let currentSiteId = null;
 let currentUrl = null;
 let currentDomain = null;
 let isScouted = false;
+let mountaineeringUpdateInterval = null;
 
 // DOM Elements
 const questionSectionEl = document.getElementById('question-section');
@@ -176,6 +177,55 @@ async function clearWebsiteState() {
   await clearPersistentState();
 }
 
+// Start mountaineering status updates during exploration
+function startMountaineeringUpdates() {
+  const mountaineeringMessages = [
+    'Turning the corner...',
+    'Climbing up the path...',
+    'Navigating through the undergrowth...',
+    'Checking the trail markers...',
+    'Ascending the ridge...',
+    'Crossing the stream...',
+    'Following the winding trail...',
+    'Reaching the next waypoint...',
+    'Scouting ahead...',
+    'Making steady progress...',
+    'Finding the best route...',
+    'Pushing through the thicket...',
+    'Gaining elevation...',
+    'Spotting landmarks...',
+    'Adjusting the compass...',
+    'Taking in the view...',
+    'Plotting the next course...',
+    'Moving through the forest...',
+    'Checking the map...',
+    'Pressing onward...'
+  ];
+  
+  let messageIndex = 0;
+  
+  mountaineeringUpdateInterval = setInterval(() => {
+    if (messageIndex < mountaineeringMessages.length) {
+      const message = mountaineeringMessages[messageIndex];
+      showStatus(message, 'working');
+      addDebugLog(`🏔️ Mountaineering update: ${message}`);
+      messageIndex++;
+    } else {
+      // Cycle through messages again
+      messageIndex = 0;
+    }
+  }, 3000); // Update every 3 seconds
+}
+
+// Stop mountaineering status updates
+function stopMountaineeringUpdates() {
+  if (mountaineeringUpdateInterval) {
+    clearInterval(mountaineeringUpdateInterval);
+    mountaineeringUpdateInterval = null;
+    addDebugLog('🏔️ Stopped mountaineering updates');
+  }
+}
+
 // Hide scout button and show query section with smooth animation
 function hideScoutButton() {
   addDebugLog('🌿 Hiding scout button with animation');
@@ -297,6 +347,9 @@ function hideError() {
 
 async function handleAnalyze() {
   try {
+    // Stop any existing mountaineering updates
+    stopMountaineeringUpdates();
+    
     addDebugLog('🌲 Starting trail reconnaissance...');
     showStatus('Scouting the trail...', 'working');
     
@@ -374,6 +427,11 @@ async function handleAnalyze() {
     addDebugLog('🌱 Starting trail exploration...');
     showStatus('Exploring the trail... This may take a few minutes.', 'working');
     
+    // Start mountaineering status updates after 5 seconds
+    const statusUpdateInterval = setTimeout(() => {
+      startMountaineeringUpdates();
+    }, 5000);
+    
     // Use the streaming crawl endpoint which is more reliable
     const crawlUrl = `${PATHFINDER_API_BASE}/crawl/stream?siteId=${currentSiteId}&startUrl=${encodeURIComponent(currentUrl)}`;
     addDebugLog(`🍃 Exploration route: ${crawlUrl}`);
@@ -408,6 +466,7 @@ async function handleAnalyze() {
               
               if (data.type === 'done') {
                 addDebugLog('🌿 Trail exploration completed successfully');
+                stopMountaineeringUpdates(); // Stop the mountaineering updates
                 isScouted = true;
                 await savePersistentState();
                 
@@ -415,6 +474,7 @@ async function handleAnalyze() {
                 showStatus('Trail scouted! Ready for your questions.', 'success');
                 return;
               } else if (data.type === 'status' && data.message.includes('error')) {
+                stopMountaineeringUpdates(); // Stop updates on error too
                 throw new Error(`Trail exploration error: ${data.message}`);
               }
             } catch (e) {
@@ -426,12 +486,14 @@ async function handleAnalyze() {
       
     } catch (error) {
       addDebugLog(`🍂 Trail exploration stream error: ${error.message}`);
+      stopMountaineeringUpdates(); // Stop updates on stream error
       throw error;
     }
     
   } catch (error) {
     console.error('Trail scouting error:', error);
     addDebugLog(`🍂 Trail scouting error: ${error.message}`);
+    stopMountaineeringUpdates(); // Stop updates on any error
     showError(`Trail scouting failed: ${error.message}`);
   }
 }
