@@ -7,7 +7,7 @@ let currentQuestion = '';
 let currentAnswer = null;
 let currentSource = null;
 let currentSiteId = null;
-let currentDomain = null;
+let currentJobId = null;
 
 // DOM Elements
 const questionSectionEl = document.getElementById('question-section');
@@ -38,15 +38,15 @@ document.addEventListener('DOMContentLoaded', () => {
   clearLogBtnEl.addEventListener('click', clearDebugLog);
   
   // Update button text
-  checkBtnEl.textContent = '1. Check Site';
+  checkBtnEl.textContent = '1. Analyze Site';
   
   addDebugLog('Sherpa extension loaded - ready to check sites');
 });
 
 async function handleCheck() {
   try {
-    addDebugLog('🔍 Starting site check...');
-    showStatus('Checking if site exists in database...', 'working');
+    addDebugLog('🔍 Starting site analysis...');
+    showStatus('Starting site analysis...', 'working');
     
     // Get current tab URL
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -55,53 +55,123 @@ async function handleCheck() {
     addDebugLog(`🔍 Current tab URL: ${currentUrl}`);
     
     if (!currentUrl || currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) {
-      throw new Error('Cannot check this page. Please navigate to a website first.');
+      throw new Error('Cannot analyze this page. Please navigate to a website first.');
     }
     
-    // Check if site exists in database
-    addDebugLog('📤 Sending check request...');
-    const response = await fetch(`${SHERPA_API_BASE}/check`, {
+    // Send analyze request to trigger crawling
+    addDebugLog('📤 Sending analyze request...');
+    const response = await fetch(`${SHERPA_API_BASE}/analyze`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url: currentUrl }),
+      body: JSON.stringify({ 
+        start_url: currentUrl,
+        domain_limit: null,
+        user_id: null,
+        max_pages: null
+      }),
     });
     
-    addDebugLog(`📥 Check response status: ${response.status}`);
+    addDebugLog(`📥 Analyze response status: ${response.status}`);
     
     if (!response.ok) {
       const errorText = await response.text();
-      addDebugLog(`❌ Check response error: HTTP ${response.status} - ${errorText}`);
-      throw new Error(`Check failed: HTTP ${response.status} - ${errorText}`);
+      addDebugLog(`❌ Analyze response error: HTTP ${response.status} - ${errorText}`);
+      throw new Error(`Analysis failed: HTTP ${response.status} - ${errorText}`);
     }
     
     const data = await response.json();
-    addDebugLog(`📊 Check response: ${JSON.stringify(data, null, 2)}`);
+    addDebugLog(`📊 Analyze response: ${JSON.stringify(data, null, 2)}`);
     
-    if (!data.exists) {
-      showError(`Site not found in database: ${data.domain}\n\nPlease crawl this site first using Pathfinder admin at:\nhttps://pathfinder-bay-mu.vercel.app/admin`);
+    if (data.mode === 'cached') {
+      // Site already analyzed recently
+      addDebugLog('✅ Site already analyzed (cached)');
+      showStatus('Site already analyzed! Ready for questions.', 'success');
+      showQueryButton();
       return;
     }
     
-    if (data.pages.length === 0) {
-      showError(`Site exists but no pages found: ${data.domain}\n\nCrawling may not be complete. Please check Pathfinder admin.`);
-      return;
+    if (data.mode === 'started') {
+      // Crawling started - wait for completion
+      currentJobId = data.job_id;
+      addDebugLog(`🔄 Crawling started, job ID: ${currentJobId}`);
+      showStatus('Crawling started... Waiting for completion...', 'working');
+      
+      // Start polling for completion
+      await pollForCompletion();
+    } else {
+      throw new Error(`Unexpected response mode: ${data.mode}`);
     }
-    
-    // Site exists with pages - show success
-    currentSiteId = data.siteId;
-    currentDomain = data.domain;
-    
-    addDebugLog(`✅ Site found: ${data.domain} with ${data.pageCount} pages`);
-    showStatus(`Site found! ${data.pageCount} pages available for questions.`, 'success');
-    showQueryButton();
     
   } catch (error) {
-    console.error('Check error:', error);
-    addDebugLog(`❌ Check error: ${error.message}`);
-    showError(`Check failed: ${error.message}`);
+    console.error('Analysis error:', error);
+    addDebugLog(`❌ Analysis error: ${error.message}`);
+    showError(`Analysis failed: ${error.message}`);
   }
+}
+
+async function pollForCompletion() {
+  const maxAttempts = 300; // 5 minutes max
+  let attempts = 0;
+  
+  const poll = async () => {
+    try {
+      console.log(`🔄 Polling job status (attempt ${attempts + 1}/${maxAttempts}):`, currentJobId);
+      showStatus(`Crawling... (checking progress ${attempts + 1}/${maxAttempts})`, 'working');
+      
+      const response = await fetch(`${SHERPA_API_BASE}/jobs/${currentJobId}/status`);
+      console.log('📥 Job status response:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Job status error:', errorText);
+        addDebugLog(`❌ Job status error: HTTP ${response.status} - ${errorText}`);
+        throw new Error(`Job status failed: HTTP ${response.status} - ${errorText}`);
+      }
+      
+      const data = await response.json();
+      console.log('📊 Job status data:', data);
+      addDebugLog(`📊 Job status: ${data.status}`);
+      
+      if (data.status === 'done') {
+        console.log('✅ Job completed successfully');
+        addDebugLog('✅ Crawling completed successfully');
+        showStatus('Analysis complete! Ready to ask questions.', 'success');
+        showQueryButton();
+        return;
+      } else if (data.status === 'error') {
+        console.error('❌ Job failed with error status');
+        addDebugLog(`❌ Job failed: ${data.error_message || 'Unknown error'}`);
+        throw new Error(`Analysis failed - job returned error status: ${data.error_message || 'Unknown error'}`);
+      } else if (attempts >= maxAttempts) {
+        console.error('❌ Polling timeout after', maxAttempts, 'attempts');
+        addDebugLog(`❌ Polling timeout after ${maxAttempts} attempts`);
+        throw new Error(`Analysis timeout after ${maxAttempts} seconds`);
+      } else {
+        // Update progress
+        const progress = data.progress;
+        if (progress) {
+          showStatus(`Crawling... (${progress.pages_scanned} pages found)`, 'working');
+          console.log('📈 Crawling progress:', progress);
+          addDebugLog(`📈 Progress: ${progress.pages_scanned} pages found`);
+        } else {
+          showStatus(`Crawling... (${data.status})`, 'working');
+          console.log('📈 Job status:', data.status);
+          addDebugLog(`📈 Status: ${data.status}`);
+        }
+        
+        attempts++;
+        setTimeout(poll, 2000); // Poll every 2 seconds
+      }
+    } catch (error) {
+      console.error('Polling error:', error);
+      addDebugLog(`❌ Polling error: ${error.message}`);
+      throw error;
+    }
+  };
+  
+  await poll();
 }
 
 async function handleQuery() {
@@ -112,22 +182,22 @@ async function handleQuery() {
       return;
     }
     
-    if (!currentSiteId) {
-      showError('Please check the site first');
+    if (!currentJobId) {
+      showError('Please analyze the site first');
       return;
     }
     
     addDebugLog(`❓ Asking question: "${question}"`);
     showStatus('Searching for answer...', 'working');
     
-    // Use the existing query endpoint
-    const response = await fetch(`${QUERY_API_BASE}/query`, {
+    // Use the Sherpa query endpoint with jobId
+    const response = await fetch(`${SHERPA_API_BASE}/query`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        siteId: currentSiteId,
+        jobId: currentJobId,
         question: question,
       }),
     });
