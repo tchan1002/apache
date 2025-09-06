@@ -105,30 +105,61 @@ async function handleAnalyze() {
     addDebugLog(`✅ Site created: ${JSON.stringify(siteData, null, 2)}`);
     currentSiteId = siteData.id;
     
-    // Now start crawling using the existing crawl API
+    // Now start crawling using the streaming crawl API
     addDebugLog('🚀 Starting crawl...');
     showStatus('Crawling site... This may take a few minutes.', 'working');
     
-    const crawlResponse = await fetch(`${PATHFINDER_API_BASE}/crawl`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        siteId: currentSiteId,
-        startUrl: currentUrl,
-      }),
-    });
+    // Use the streaming crawl endpoint which is more reliable
+    const crawlUrl = `${PATHFINDER_API_BASE}/crawl/stream?siteId=${currentSiteId}&startUrl=${encodeURIComponent(currentUrl)}`;
+    addDebugLog(`🔗 Crawl URL: ${crawlUrl}`);
     
-    if (!crawlResponse.ok) {
-      const errorText = await crawlResponse.text();
-      addDebugLog(`❌ Crawl error: HTTP ${crawlResponse.status} - ${errorText}`);
-      throw new Error(`Crawling failed: HTTP ${crawlResponse.status} - ${errorText}`);
+    try {
+      const response = await fetch(crawlUrl);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        addDebugLog(`❌ Crawl error: HTTP ${response.status} - ${errorText}`);
+        throw new Error(`Crawling failed: HTTP ${response.status} - ${errorText}`);
+      }
+      
+      // Read the stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              addDebugLog(`📡 Crawl event: ${data.type} - ${data.message || data.url || ''}`);
+              
+              if (data.type === 'done') {
+                addDebugLog('✅ Crawling completed successfully');
+                showStatus('Analysis complete! Ready to ask questions.', 'success');
+                showQueryButton();
+                return;
+              } else if (data.type === 'status' && data.message.includes('error')) {
+                throw new Error(`Crawling error: ${data.message}`);
+              }
+            } catch (e) {
+              // Ignore parsing errors for non-JSON lines
+            }
+          }
+        }
+      }
+      
+    } catch (error) {
+      addDebugLog(`❌ Crawl stream error: ${error.message}`);
+      throw error;
     }
-    
-    addDebugLog('✅ Crawling completed successfully');
-    showStatus('Analysis complete! Ready to ask questions.', 'success');
-    showQueryButton();
     
   } catch (error) {
     console.error('Analysis error:', error);
