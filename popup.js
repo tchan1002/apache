@@ -11,6 +11,30 @@ let currentDomain = null;
 let isScouted = false;
 let mountaineeringUpdateInterval = null;
 
+// Log performance optimization
+let logBuffer = [];
+let logDisplayLimit = 50; // Show only last 50 lines
+let logUpdateInterval = null;
+
+// Adjust log display limit for performance
+function setLogDisplayLimit(limit) {
+  logDisplayLimit = Math.max(10, Math.min(200, limit)); // Between 10-200 lines
+  addDebugLog(`📊 Log display limit set to ${logDisplayLimit} lines`);
+  updateLogDisplay(); // Immediately update display
+}
+
+// Reduce log verbosity during high-activity periods
+function reduceLogVerbosity() {
+  logDisplayLimit = 25; // Show fewer lines during heavy activity
+  addDebugLog('📊 Reduced log verbosity for better performance');
+}
+
+// Restore normal log verbosity
+function restoreLogVerbosity() {
+  logDisplayLimit = 50; // Back to normal
+  addDebugLog('📊 Restored normal log verbosity');
+}
+
 // DOM Elements
 const questionSectionEl = document.getElementById('question-section');
 const questionInputEl = document.getElementById('question-input');
@@ -463,6 +487,9 @@ async function handleAnalyze() {
     addDebugLog('🌱 Starting trail exploration...');
     showStatus('Exploring the trail... This may take a few minutes.', 'working');
     
+    // Reduce log verbosity during heavy crawling activity
+    reduceLogVerbosity();
+    
     // Hide question input during scouting
     questionInputEl.classList.add('hidden');
     queryBtnEl.classList.add('hidden');
@@ -507,6 +534,7 @@ async function handleAnalyze() {
               if (data.type === 'done') {
                 addDebugLog('🌿 Trail exploration completed successfully');
                 stopMountaineeringUpdates(); // Stop the mountaineering updates
+                restoreLogVerbosity(); // Restore normal log verbosity
                 isScouted = true;
                 await savePersistentState();
                 
@@ -515,6 +543,7 @@ async function handleAnalyze() {
                 return;
               } else if (data.type === 'status' && data.message.includes('error')) {
                 stopMountaineeringUpdates(); // Stop updates on error too
+                restoreLogVerbosity(); // Restore normal log verbosity
                 throw new Error(`Trail exploration error: ${data.message}`);
               }
             } catch (e) {
@@ -527,6 +556,7 @@ async function handleAnalyze() {
     } catch (error) {
       addDebugLog(`🍂 Trail exploration stream error: ${error.message}`);
       stopMountaineeringUpdates(); // Stop updates on stream error
+      restoreLogVerbosity(); // Restore normal log verbosity
       throw error;
     }
     
@@ -534,6 +564,7 @@ async function handleAnalyze() {
     console.error('Trail scouting error:', error);
     addDebugLog(`🍂 Trail scouting error: ${error.message}`);
     stopMountaineeringUpdates(); // Stop updates on any error
+    restoreLogVerbosity(); // Restore normal log verbosity
     showError(`Trail scouting failed: ${error.message}`);
   }
 }
@@ -759,26 +790,61 @@ function extractDomain(url) {
 function addDebugLog(message) {
   const timestamp = new Date().toLocaleTimeString();
   const logEntry = `[${timestamp}] ${message}`;
-  debugContentEl.textContent += logEntry + '\n';
-  debugContentEl.scrollTop = debugContentEl.scrollHeight;
+  
+  // Add to buffer (fast operation)
+  logBuffer.push(logEntry);
+  
+  // Keep only recent entries in buffer (prevent memory bloat)
+  if (logBuffer.length > 1000) {
+    logBuffer = logBuffer.slice(-500); // Keep last 500 entries
+  }
+  
+  // Console log immediately (for debugging)
   console.log(logEntry);
+  
+  // Update display less frequently (performance optimization)
+  if (!logUpdateInterval) {
+    logUpdateInterval = setTimeout(updateLogDisplay, 100); // Update every 100ms
+  }
+}
+
+// Update log display with throttling
+function updateLogDisplay() {
+  if (logBuffer.length === 0) return;
+  
+  // Show only the last N lines for performance
+  const displayLines = logBuffer.slice(-logDisplayLimit);
+  debugContentEl.textContent = displayLines.join('\n');
+  debugContentEl.scrollTop = debugContentEl.scrollHeight;
+  
+  // Clear the interval
+  logUpdateInterval = null;
 }
 
 function clearDebugLog() {
+  // Clear both display and buffer
   debugContentEl.textContent = '';
+  logBuffer = [];
+  
+  // Clear any pending update
+  if (logUpdateInterval) {
+    clearTimeout(logUpdateInterval);
+    logUpdateInterval = null;
+  }
 }
 
 // Copy debug log to clipboard
 async function copyDebugLog() {
   try {
-    const logText = debugContentEl.textContent;
+    // Copy the full buffer, not just displayed text
+    const logText = logBuffer.join('\n');
     if (!logText.trim()) {
       addDebugLog('🍂 No log content to copy');
       return;
     }
     
     await navigator.clipboard.writeText(logText);
-    addDebugLog('📋 Log copied to clipboard!');
+    addDebugLog('📋 Full log copied to clipboard!');
     
     // Visual feedback - briefly change button text
     const originalText = copyLogBtnEl.textContent;
