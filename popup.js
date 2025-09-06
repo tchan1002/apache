@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Check if current website is already scouted
   await checkWebsiteStatus();
   
-  addDebugLog('Sherpa guide ready - ready to scout trails');
+  addDebugLog('🌿 Sherpa guide ready - ready to scout trails');
 });
 
 // Load persistent state from storage (for reference only - real-time check will override)
@@ -195,20 +195,21 @@ async function showScoutButton() {
   currentAnswer = null;
   currentSource = null;
   
-  // Clear persistent state
-  await clearPersistentState();
-  
-  // Hide all other elements first
+  // Hide query elements first
   queryBtnEl.classList.add('hidden');
-  questionSectionEl.classList.add('hidden');
+  questionInputEl.classList.add('hidden');
   statusEl.classList.add('hidden');
   resultEl.classList.add('hidden');
   errorEl.classList.add('hidden');
   
-  // Show scout button
-  setTimeout(() => {
-    analyzeBtnEl.classList.remove('hidden');
-  }, 100);
+  // Show scout button and question section
+  analyzeBtnEl.classList.remove('hidden');
+  questionSectionEl.classList.remove('hidden');
+  
+  // Debug: Check if button is visible
+  addDebugLog(`🌿 Scout button classes: ${analyzeBtnEl.className}`);
+  addDebugLog(`🌿 Question section classes: ${questionSectionEl.className}`);
+  addDebugLog(`🌿 Scout button display: ${window.getComputedStyle(analyzeBtnEl).display}`);
 }
 
 // Show query button and input with smooth animation
