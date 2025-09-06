@@ -9,7 +9,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   }
 });
 
-// Handle messages from trail content scripts or guide popup
+// Handle messages from trail content scripts or Sherpa popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getCurrentTab') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {

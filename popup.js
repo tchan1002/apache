@@ -172,7 +172,7 @@ async function handleQuery() {
   try {
     const question = questionInputEl.value.trim();
     if (!question) {
-      showError('Please ask your guide a question');
+      showError('Please ask Sherpa a question');
       return;
     }
     
@@ -181,8 +181,8 @@ async function handleQuery() {
       return;
     }
     
-    addDebugLog(`🗣️ Asking guide: "${question}"`);
-    showStatus('Consulting the trail guide...', 'working');
+    addDebugLog(`🗣️ Asking Sherpa: "${question}"`);
+    showStatus('Consulting Sherpa...', 'working');
     
     // Use the existing query API
     const response = await fetch(`${PATHFINDER_API_BASE}/query`, {
@@ -196,28 +196,28 @@ async function handleQuery() {
       }),
     });
     
-    addDebugLog(`📥 Guide response status: ${response.status}`);
+    addDebugLog(`📥 Sherpa response status: ${response.status}`);
     
     if (!response.ok) {
       const errorText = await response.text();
-      addDebugLog(`❌ Guide response error: HTTP ${response.status} - ${errorText}`);
-      throw new Error(`Guide consultation failed: HTTP ${response.status} - ${errorText}`);
+      addDebugLog(`❌ Sherpa response error: HTTP ${response.status} - ${errorText}`);
+      throw new Error(`Sherpa consultation failed: HTTP ${response.status} - ${errorText}`);
     }
     
     const data = await response.json();
-    addDebugLog(`📊 Guide response: ${JSON.stringify(data, null, 2)}`);
+    addDebugLog(`📊 Sherpa response: ${JSON.stringify(data, null, 2)}`);
     
     // Display the answer
     currentAnswer = data.answer;
     currentSource = data.sources && data.sources.length > 0 ? data.sources[0] : null;
     
     showResult(data.answer, data.sources || []);
-    showStatus('Trail guide has the answer!', 'success');
+    showStatus("Sherpa's found a spot!", 'success');
     
   } catch (error) {
-    console.error('Guide consultation error:', error);
-    addDebugLog(`❌ Guide consultation error: ${error.message}`);
-    showError(`Guide consultation failed: ${error.message}`);
+    console.error('Sherpa consultation error:', error);
+    addDebugLog(`❌ Sherpa consultation error: ${error.message}`);
+    showError(`Sherpa consultation failed: ${error.message}`);
   }
 }
 
@@ -250,7 +250,13 @@ function showError(message) {
 
 function showResult(answer, sources) {
   resultEl.style.display = 'block';
-  answerTextEl.textContent = answer;
+  
+  // Check if answer is "I don't know" and provide special message
+  if (answer.toLowerCase().includes("i don't know") || answer.toLowerCase().includes("i do not know")) {
+    answerTextEl.textContent = "Sherpa's not sure, but check out the trail marker below!";
+  } else {
+    answerTextEl.textContent = answer;
+  }
   
   if (sources.length > 0) {
     const source = sources[0];
