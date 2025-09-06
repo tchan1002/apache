@@ -12,7 +12,8 @@ let currentJobId = null;
 // DOM Elements
 const questionSectionEl = document.getElementById('question-section');
 const questionInputEl = document.getElementById('question-input');
-const askBtnEl = document.getElementById('ask-btn');
+const analyzeBtnEl = document.getElementById('analyze-btn');
+const queryBtnEl = document.getElementById('query-btn');
 const statusEl = document.getElementById('status');
 const statusTextEl = document.getElementById('status-text');
 const resultEl = document.getElementById('result');
@@ -35,10 +36,11 @@ document.addEventListener('DOMContentLoaded', () => {
   questionInputEl.focus();
   
   // Set up event listeners
-  askBtnEl.addEventListener('click', handleAsk);
+  analyzeBtnEl.addEventListener('click', handleAnalyze);
+  queryBtnEl.addEventListener('click', handleQuery);
   questionInputEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      handleAsk();
+      handleAnalyze();
     }
   });
   
@@ -51,13 +53,9 @@ document.addEventListener('DOMContentLoaded', () => {
   noBtnEl.addEventListener('click', () => submitFeedback(false));
 });
 
-async function handleAsk() {
-  const question = questionInputEl.value.trim();
-  if (!question) return;
-  
-  currentQuestion = question;
-  askBtnEl.disabled = true;
-  askBtnEl.textContent = 'Analyzing...';
+async function handleAnalyze() {
+  analyzeBtnEl.disabled = true;
+  analyzeBtnEl.textContent = 'Analyzing...';
   
   try {
     // Step 1: Get current tab URL
@@ -121,7 +119,7 @@ async function handleAsk() {
       currentSiteId = analyzeData.job_id; // For cached results, job_id is the siteId
       console.log('✅ Using cached jobId as siteId:', currentSiteId);
       addDebugLog(`✅ Using cached jobId as siteId: ${currentSiteId}`);
-      await queryWithQuestion();
+      showQueryButton();
     } else if (analyzeData.mode === 'started') {
       // Poll for completion
       showStatus('Pathfinder is crawling the website...', 'working');
@@ -135,11 +133,42 @@ async function handleAsk() {
     }
   } catch (error) {
     console.error('❌ Analysis error:', error);
+    addDebugLog(`❌ Analysis error: ${error.message}`);
     showError(`Analysis failed: ${error.message}`);
   } finally {
-    askBtnEl.disabled = false;
-    askBtnEl.textContent = 'Ask';
+    analyzeBtnEl.disabled = false;
+    analyzeBtnEl.textContent = '1. Analyze Site';
   }
+}
+
+async function handleQuery() {
+  const question = questionInputEl.value.trim();
+  if (!question) {
+    addDebugLog(`❌ No question entered`);
+    showError('Please enter a question first');
+    return;
+  }
+  
+  currentQuestion = question;
+  queryBtnEl.disabled = true;
+  queryBtnEl.textContent = 'Querying...';
+  
+  try {
+    await queryWithQuestion();
+  } catch (error) {
+    console.error('❌ Query error:', error);
+    addDebugLog(`❌ Query error: ${error.message}`);
+    showError(`Query failed: ${error.message}`);
+  } finally {
+    queryBtnEl.disabled = false;
+    queryBtnEl.textContent = '2. Ask Question';
+  }
+}
+
+function showQueryButton() {
+  showStatus('Analysis complete! Ready to ask questions.', 'success');
+  queryBtnEl.classList.remove('hidden');
+  addDebugLog(`✅ Analysis complete - query button shown`);
 }
 
 async function pollForCompletion() {
@@ -197,7 +226,8 @@ async function pollForCompletion() {
         
         currentSiteId = currentJobId; // Use jobId as siteId for now
         console.log('✅ Using jobId as siteId for query:', currentSiteId);
-        await queryWithQuestion();
+        addDebugLog(`✅ Using jobId as siteId for query: ${currentSiteId}`);
+        showQueryButton();
       } else if (data.status === 'error') {
         console.error('❌ Job failed with error status');
         throw new Error('Analysis failed - job returned error status');
@@ -358,9 +388,13 @@ function showStatus(text, type) {
 }
 
 function showError(text) {
-  hideAll();
-  errorTextEl.textContent = text;
+  // Don't hide debug panel when showing errors - preserve the log
+  questionSectionEl.classList.add('hidden');
+  statusEl.classList.add('hidden');
+  resultEl.classList.add('hidden');
   errorEl.classList.remove('hidden');
+  // Keep debug panel visible
+  errorTextEl.textContent = text;
 }
 
 function hideAll() {

@@ -52,7 +52,7 @@
       box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.1);
     }
     
-    .ask-btn {
+    .analyze-btn, .query-btn {
       padding: 10px 16px;
       background: #1a1a1a;
       color: white;
@@ -63,15 +63,24 @@
       cursor: pointer;
       transition: background-color 0.2s;
       white-space: nowrap;
+      margin-left: 8px;
     }
     
-    .ask-btn:hover {
+    .analyze-btn:hover:not(:disabled), .query-btn:hover:not(:disabled) {
       background: #404040;
     }
     
-    .ask-btn:disabled {
+    .analyze-btn:disabled, .query-btn:disabled {
       background: #9ca3af;
       cursor: not-allowed;
+    }
+    
+    .query-btn {
+      background: #10b981;
+    }
+    
+    .query-btn:hover:not(:disabled) {
+      background: #059669;
     }
     
     .status {
@@ -291,7 +300,8 @@
         placeholder="e.g., forgot clinic phone number"
         class="question-input"
       />
-      <button id="ask-btn" class="ask-btn">Ask</button>
+      <button id="analyze-btn" class="analyze-btn">1. Analyze Site</button>
+      <button id="query-btn" class="query-btn hidden">2. Ask Question</button>
     </div>
   </div>
   
