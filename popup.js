@@ -240,7 +240,7 @@ async function pollForCompletion() {
         // Update progress
         const progress = data.progress;
         if (progress) {
-          showStatus(`Crawling... (${progress.pages_scanned}/${progress.pages_total_est || '?'} pages)`, 'working');
+          showStatus(`Crawling... (${progress.pages_scanned} pages found)`, 'working');
           console.log('📈 Crawling progress:', progress);
         } else {
           showStatus(`Crawling... (${data.status})`, 'working');
