@@ -47,24 +47,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   addDebugLog('Sherpa guide ready - ready to scout trails');
 });
 
-// Load persistent state from storage
+// Load persistent state from storage (for reference only - real-time check will override)
 async function loadPersistentState() {
   try {
     const result = await chrome.storage.local.get(['sherpaState']);
     if (result.sherpaState) {
       const state = result.sherpaState;
-      currentSiteId = state.siteId;
-      currentUrl = state.url;
-      currentDomain = state.domain;
-      isScouted = state.isScouted;
-      
-      if (isScouted && currentSiteId) {
-        addDebugLog(`🌿 Restored state for website: ${currentUrl}`);
-      } else {
-        addDebugLog(`🌿 No valid state found, will check website status`);
-      }
+      addDebugLog(`🌿 Found cached state for: ${state.url} (will verify with real-time check)`);
     } else {
-      addDebugLog(`🌿 No persistent state found, will check website status`);
+      addDebugLog(`🌿 No cached state found, will perform real-time check`);
     }
   } catch (error) {
     addDebugLog(`🍂 Failed to load persistent state: ${error.message}`);
@@ -98,7 +89,7 @@ async function clearPersistentState() {
   }
 }
 
-// Check if current website is already scouted
+// Check if current website is already scouted (REAL-TIME CHECK)
 async function checkWebsiteStatus() {
   try {
     // Get current tab URL
@@ -106,26 +97,18 @@ async function checkWebsiteStatus() {
     const tabUrl = tab.url;
     
     if (!tabUrl || tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://')) {
-      showScoutButton();
+      await showScoutButton();
       return;
     }
     
-    // Check if this is the same website we have state for
-    if (currentUrl === tabUrl && isScouted && currentSiteId) {
-      addDebugLog(`🌿 Same website detected: ${tabUrl}`);
-      hideScoutButton();
-      showQueryButton();
-      showStatus('Trail already scouted! Ready for your questions.', 'success');
-      return;
-    }
-    
-    // New website - check if it's already scouted
+    // Always update current URL and domain
     currentUrl = tabUrl;
     currentDomain = extractDomain(tabUrl);
     
-    addDebugLog(`🍃 Checking website status: ${tabUrl}`);
+    addDebugLog(`🍃 Real-time website check: ${tabUrl}`);
     
-    // Check if website is already scouted
+    // ALWAYS perform real-time check with Pathfinder API
+    // This ensures we detect if a previously scouted website has been deleted
     const checkResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
       method: 'POST',
       headers: {
@@ -139,31 +122,54 @@ async function checkWebsiteStatus() {
     
     if (checkResponse.ok) {
       const checkData = await checkResponse.json();
-      addDebugLog(`🌿 Website check response: ${JSON.stringify(checkData, null, 2)}`);
+      addDebugLog(`🌿 Real-time check response: ${JSON.stringify(checkData, null, 2)}`);
       
       if (checkData.exists && checkData.pages && checkData.pages.length > 0) {
-        // Website is already scouted
+        // Website is currently scouted in database
         currentSiteId = checkData.siteId;
         isScouted = true;
         await savePersistentState();
         
-        addDebugLog('🌿 Website already scouted - hiding scout button');
+        addDebugLog('🌿 Website confirmed scouted - showing query interface');
         hideScoutButton();
         showQueryButton();
         showStatus('Trail already scouted! Ready for your questions.', 'success');
         return;
+      } else {
+        // Website not scouted or was deleted from database
+        addDebugLog('🌿 Website not scouted or was deleted - clearing state and showing scout button');
+        await clearWebsiteState();
+        await showScoutButton();
+        return;
       }
+    } else {
+      // API check failed - treat as not scouted
+      addDebugLog(`🍂 API check failed (HTTP ${checkResponse.status}) - treating as not scouted`);
+      await clearWebsiteState();
+      await showScoutButton();
+      return;
     }
     
-    // Website not scouted - show scout button
-    addDebugLog('🌿 Website not scouted - showing scout button');
-    await showScoutButton();
-    
   } catch (error) {
-    addDebugLog(`🍂 Website check failed: ${error.message}`);
-    // On error, show scout button as fallback
+    addDebugLog(`🍂 Real-time website check failed: ${error.message}`);
+    // On error, clear state and show scout button as fallback
+    await clearWebsiteState();
     await showScoutButton();
   }
+}
+
+// Clear website state when it's no longer scouted
+async function clearWebsiteState() {
+  addDebugLog('🌿 Clearing website state - website no longer scouted');
+  
+  // Reset all state variables
+  currentSiteId = null;
+  isScouted = false;
+  currentAnswer = null;
+  currentSource = null;
+  
+  // Clear persistent state
+  await clearPersistentState();
 }
 
 // Hide scout button and show query section with smooth animation
@@ -431,8 +437,38 @@ async function handleQuery() {
       return;
     }
     
-    if (!currentSiteId) {
+    if (!currentSiteId || !isScouted) {
       showError('Please scout the trail first');
+      return;
+    }
+    
+    // Double-check that the website is still scouted (real-time verification)
+    addDebugLog('🌿 Verifying website is still scouted before query...');
+    const verifyResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        url: currentUrl,
+        checkVectorIndex: true
+      }),
+    });
+    
+    if (verifyResponse.ok) {
+      const verifyData = await verifyResponse.json();
+      if (!verifyData.exists || !verifyData.pages || verifyData.pages.length === 0) {
+        addDebugLog('🍂 Website no longer scouted - clearing state and showing scout button');
+        await clearWebsiteState();
+        await showScoutButton();
+        showError('Trail has been cleared. Please scout the trail again.');
+        return;
+      }
+    } else {
+      addDebugLog('🍂 Verification failed - treating as not scouted');
+      await clearWebsiteState();
+      await showScoutButton();
+      showError('Unable to verify trail status. Please scout the trail again.');
       return;
     }
     
