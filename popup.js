@@ -41,6 +41,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   copyLogBtnEl.addEventListener('click', copyDebugLog);
   clearLogBtnEl.addEventListener('click', clearDebugLog);
   
+  // Add Enter key support
+  questionInputEl.addEventListener('keypress', handleEnterKey);
+  
   // Load persistent state
   await loadPersistentState();
   
@@ -223,6 +226,24 @@ function stopMountaineeringUpdates() {
     clearInterval(mountaineeringUpdateInterval);
     mountaineeringUpdateInterval = null;
     addDebugLog('🏔️ Stopped mountaineering updates');
+  }
+}
+
+// Handle Enter key press
+function handleEnterKey(event) {
+  if (event.key === 'Enter') {
+    event.preventDefault(); // Prevent form submission
+    
+    // Check which button should be active
+    if (!analyzeBtnEl.classList.contains('hidden')) {
+      // Scout button is visible - trigger scouting
+      addDebugLog('⌨️ Enter key pressed - triggering scout trail');
+      handleAnalyze();
+    } else if (!queryBtnEl.classList.contains('hidden')) {
+      // Query button is visible - trigger query
+      addDebugLog('⌨️ Enter key pressed - triggering ask question');
+      handleQuery();
+    }
   }
 }
 
