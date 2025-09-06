@@ -60,7 +60,11 @@ async function loadPersistentState() {
       
       if (isScouted && currentSiteId) {
         addDebugLog(`🌿 Restored state for website: ${currentUrl}`);
+      } else {
+        addDebugLog(`🌿 No valid state found, will check website status`);
       }
+    } else {
+      addDebugLog(`🌿 No persistent state found, will check website status`);
     }
   } catch (error) {
     addDebugLog(`🍂 Failed to load persistent state: ${error.message}`);
@@ -84,6 +88,16 @@ async function savePersistentState() {
   }
 }
 
+// Clear persistent state
+async function clearPersistentState() {
+  try {
+    await chrome.storage.local.remove(['sherpaState']);
+    addDebugLog('🌿 Cleared persistent state');
+  } catch (error) {
+    addDebugLog(`🍂 Failed to clear persistent state: ${error.message}`);
+  }
+}
+
 // Check if current website is already scouted
 async function checkWebsiteStatus() {
   try {
@@ -92,7 +106,7 @@ async function checkWebsiteStatus() {
     const tabUrl = tab.url;
     
     if (!tabUrl || tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://')) {
-      hideScoutButton();
+      showScoutButton();
       return;
     }
     
@@ -143,12 +157,12 @@ async function checkWebsiteStatus() {
     
     // Website not scouted - show scout button
     addDebugLog('🌿 Website not scouted - showing scout button');
-    showScoutButton();
+    await showScoutButton();
     
   } catch (error) {
     addDebugLog(`🍂 Website check failed: ${error.message}`);
     // On error, show scout button as fallback
-    showScoutButton();
+    await showScoutButton();
   }
 }
 
@@ -166,12 +180,24 @@ function hideScoutButton() {
 }
 
 // Show scout button with smooth animation
-function showScoutButton() {
+async function showScoutButton() {
   addDebugLog('🌿 Showing scout button with animation');
   
-  // Hide query section first
+  // Reset state
+  currentSiteId = null;
+  isScouted = false;
+  currentAnswer = null;
+  currentSource = null;
+  
+  // Clear persistent state
+  await clearPersistentState();
+  
+  // Hide all other elements first
   queryBtnEl.classList.add('hidden');
   questionSectionEl.classList.add('hidden');
+  statusEl.classList.add('hidden');
+  resultEl.classList.add('hidden');
+  errorEl.classList.add('hidden');
   
   // Show scout button
   setTimeout(() => {
