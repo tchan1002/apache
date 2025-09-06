@@ -35,30 +35,30 @@ document.addEventListener('DOMContentLoaded', () => {
   queryBtnEl.addEventListener('click', handleQuery);
   clearLogBtnEl.addEventListener('click', clearDebugLog);
   
-  addDebugLog('Sherpa extension loaded - ready to analyze sites');
+  addDebugLog('Sherpa guide ready - ready to scout trails');
 });
 
 async function handleAnalyze() {
   try {
-    addDebugLog('🔍 Starting site analysis...');
-    showStatus('Starting site analysis...', 'working');
+    addDebugLog('🏔️ Starting trail reconnaissance...');
+    showStatus('Scouting the trail...', 'working');
     
     // Get current tab URL
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const currentUrl = tab.url;
     
-    addDebugLog(`🔍 Current tab URL: ${currentUrl}`);
+    addDebugLog(`🗺️ Current trail location: ${currentUrl}`);
     
     if (!currentUrl || currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) {
-      throw new Error('Cannot analyze this page. Please navigate to a website first.');
+      throw new Error('Cannot scout this trail. Please navigate to a website first.');
     }
     
     // Extract domain from URL
     const domain = extractDomain(currentUrl);
-    addDebugLog(`🔍 Domain: ${domain}`);
+    addDebugLog(`🏔️ Trail base camp: ${domain}`);
     
     // Check if site already exists
-    addDebugLog('🔍 Checking if site already exists...');
+    addDebugLog('🗺️ Checking if trail already mapped...');
     const checkResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
       method: 'POST',
       headers: {
@@ -72,16 +72,16 @@ async function handleAnalyze() {
       addDebugLog(`📊 Check response: ${JSON.stringify(checkData, null, 2)}`);
       
       if (checkData.exists && checkData.pages && checkData.pages.length > 0) {
-        addDebugLog('✅ Site already analyzed with pages');
-        showStatus('Site already analyzed! Ready for questions.', 'success');
+        addDebugLog('✅ Trail already mapped with waypoints');
+        showStatus('Trail already scouted! Ready for your questions.', 'success');
         currentSiteId = checkData.siteId;
         showQueryButton();
         return;
       }
     }
     
-    // Site doesn't exist or has no pages, need to create and crawl
-    addDebugLog('🔍 Site needs crawling, creating site...');
+    // Trail doesn't exist or has no waypoints, need to create and explore
+    addDebugLog('🏔️ Trail needs exploration, setting up base camp...');
     
     // Create site first
     const createSiteResponse = await fetch(`${PATHFINDER_API_BASE}/site`, {
@@ -97,29 +97,29 @@ async function handleAnalyze() {
     
     if (!createSiteResponse.ok) {
       const errorText = await createSiteResponse.text();
-      addDebugLog(`❌ Create site error: HTTP ${createSiteResponse.status} - ${errorText}`);
-      throw new Error(`Failed to create site: HTTP ${createSiteResponse.status} - ${errorText}`);
+      addDebugLog(`❌ Base camp setup error: HTTP ${createSiteResponse.status} - ${errorText}`);
+      throw new Error(`Failed to set up base camp: HTTP ${createSiteResponse.status} - ${errorText}`);
     }
     
     const siteData = await createSiteResponse.json();
-    addDebugLog(`✅ Site created: ${JSON.stringify(siteData, null, 2)}`);
+    addDebugLog(`✅ Base camp established: ${JSON.stringify(siteData, null, 2)}`);
     currentSiteId = siteData.id;
     
-    // Now start crawling using the streaming crawl API
-    addDebugLog('🚀 Starting crawl...');
-    showStatus('Crawling site... This may take a few minutes.', 'working');
+    // Now start exploring using the streaming crawl API
+    addDebugLog('🥾 Starting trail exploration...');
+    showStatus('Exploring the trail... This may take a few minutes.', 'working');
     
     // Use the streaming crawl endpoint which is more reliable
     const crawlUrl = `${PATHFINDER_API_BASE}/crawl/stream?siteId=${currentSiteId}&startUrl=${encodeURIComponent(currentUrl)}`;
-    addDebugLog(`🔗 Crawl URL: ${crawlUrl}`);
+    addDebugLog(`🗺️ Exploration route: ${crawlUrl}`);
     
     try {
       const response = await fetch(crawlUrl);
       
       if (!response.ok) {
         const errorText = await response.text();
-        addDebugLog(`❌ Crawl error: HTTP ${response.status} - ${errorText}`);
-        throw new Error(`Crawling failed: HTTP ${response.status} - ${errorText}`);
+        addDebugLog(`❌ Exploration error: HTTP ${response.status} - ${errorText}`);
+        throw new Error(`Trail exploration failed: HTTP ${response.status} - ${errorText}`);
       }
       
       // Read the stream
@@ -139,15 +139,15 @@ async function handleAnalyze() {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
-              addDebugLog(`📡 Crawl event: ${data.type} - ${data.message || data.url || ''}`);
+              addDebugLog(`📡 Trail progress: ${data.type} - ${data.message || data.url || ''}`);
               
               if (data.type === 'done') {
-                addDebugLog('✅ Crawling completed successfully');
-                showStatus('Analysis complete! Ready to ask questions.', 'success');
+                addDebugLog('✅ Trail exploration completed successfully');
+                showStatus('Trail scouted! Ready for your questions.', 'success');
                 showQueryButton();
                 return;
               } else if (data.type === 'status' && data.message.includes('error')) {
-                throw new Error(`Crawling error: ${data.message}`);
+                throw new Error(`Trail exploration error: ${data.message}`);
               }
             } catch (e) {
               // Ignore parsing errors for non-JSON lines
@@ -157,14 +157,14 @@ async function handleAnalyze() {
       }
       
     } catch (error) {
-      addDebugLog(`❌ Crawl stream error: ${error.message}`);
+      addDebugLog(`❌ Trail exploration stream error: ${error.message}`);
       throw error;
     }
     
   } catch (error) {
-    console.error('Analysis error:', error);
-    addDebugLog(`❌ Analysis error: ${error.message}`);
-    showError(`Analysis failed: ${error.message}`);
+    console.error('Trail scouting error:', error);
+    addDebugLog(`❌ Trail scouting error: ${error.message}`);
+    showError(`Trail scouting failed: ${error.message}`);
   }
 }
 
@@ -172,17 +172,17 @@ async function handleQuery() {
   try {
     const question = questionInputEl.value.trim();
     if (!question) {
-      showError('Please enter a question');
+      showError('Please ask your guide a question');
       return;
     }
     
     if (!currentSiteId) {
-      showError('Please analyze the site first');
+      showError('Please scout the trail first');
       return;
     }
     
-    addDebugLog(`🔍 Asking question: "${question}"`);
-    showStatus('Searching for answer...', 'working');
+    addDebugLog(`🗣️ Asking guide: "${question}"`);
+    showStatus('Consulting the trail guide...', 'working');
     
     // Use the existing query API
     const response = await fetch(`${PATHFINDER_API_BASE}/query`, {
@@ -196,28 +196,28 @@ async function handleQuery() {
       }),
     });
     
-    addDebugLog(`📥 Query response status: ${response.status}`);
+    addDebugLog(`📥 Guide response status: ${response.status}`);
     
     if (!response.ok) {
       const errorText = await response.text();
-      addDebugLog(`❌ Query response error: HTTP ${response.status} - ${errorText}`);
-      throw new Error(`Query failed: HTTP ${response.status} - ${errorText}`);
+      addDebugLog(`❌ Guide response error: HTTP ${response.status} - ${errorText}`);
+      throw new Error(`Guide consultation failed: HTTP ${response.status} - ${errorText}`);
     }
     
     const data = await response.json();
-    addDebugLog(`📊 Query response: ${JSON.stringify(data, null, 2)}`);
+    addDebugLog(`📊 Guide response: ${JSON.stringify(data, null, 2)}`);
     
     // Display the answer
     currentAnswer = data.answer;
     currentSource = data.sources && data.sources.length > 0 ? data.sources[0] : null;
     
     showResult(data.answer, data.sources || []);
-    showStatus('Answer found!', 'success');
+    showStatus('Trail guide has the answer!', 'success');
     
   } catch (error) {
-    console.error('Query error:', error);
-    addDebugLog(`❌ Query error: ${error.message}`);
-    showError(`Query failed: ${error.message}`);
+    console.error('Guide consultation error:', error);
+    addDebugLog(`❌ Guide consultation error: ${error.message}`);
+    showError(`Guide consultation failed: ${error.message}`);
   }
 }
 
@@ -239,7 +239,7 @@ function showStatus(message, type) {
   statusEl.style.display = 'block';
   statusTextEl.textContent = message;
   statusEl.className = `status ${type}`;
-  addDebugLog(`📊 Status: ${message}`);
+  addDebugLog(`📊 Trail status: ${message}`);
 }
 
 function showError(message) {

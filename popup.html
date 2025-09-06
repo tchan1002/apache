@@ -308,47 +308,47 @@
 <body>
   <div class="header">
     <h1>Sherpa</h1>
-    <p class="subtitle">Analyze site and ask questions</p>
+    <p class="subtitle">Scout the trail and ask your guide</p>
   </div>
   
   <div id="question-section" class="question-section">
-        <button id="analyze-btn" class="analyze-btn">1. Analyze Site</button>
+        <button id="analyze-btn" class="analyze-btn">1. Scout the Trail</button>
     
     <div class="input-group">
       <input 
         type="text" 
         id="question-input" 
-        placeholder="e.g., forgot clinic phone number"
+        placeholder="e.g., where's the summit register?"
         class="question-input"
       />
     </div>
     
-    <button id="query-btn" class="query-btn hidden">2. Ask Question</button>
+    <button id="query-btn" class="query-btn hidden">2. Ask Your Guide</button>
   </div>
   
   <div id="status" class="status hidden">
-    <span id="status-text">Working...</span>
+    <span id="status-text">Scouting...</span>
   </div>
   
   <div id="result" class="result hidden">
     <div class="answer-section">
-      <div class="answer-title">Answer:</div>
+      <div class="answer-title">Trail Guide Says:</div>
       <div class="answer-text" id="answer-text"></div>
     </div>
     
     <div class="source-section">
-      <div class="source-title">Source:</div>
+      <div class="source-title">Trail Marker:</div>
       <div class="source-url" id="source-url"></div>
       <div class="source-title-text" id="source-title"></div>
     </div>
     
     <div class="buttons">
-      <button id="go-to-source-btn" class="btn btn-primary">Go to Source</button>
-      <button id="feedback-btn" class="btn btn-secondary">Was this helpful?</button>
+      <button id="go-to-source-btn" class="btn btn-primary">Follow Trail</button>
+      <button id="feedback-btn" class="btn btn-secondary">Helpful trail info?</button>
     </div>
     
     <div class="feedback hidden" id="feedback">
-      <div class="feedback-text">Was this answer helpful?</div>
+      <div class="feedback-text">Was this trail guidance helpful?</div>
       <div class="feedback-buttons">
         <button id="yes-btn" class="feedback-btn">✅ Yes</button>
         <button id="no-btn" class="feedback-btn">❌ No</button>
@@ -357,13 +357,13 @@
   </div>
   
   <div id="error" class="status error hidden">
-    <span id="error-text">Sorry, we got lost :(. Try another question</span>
+    <span id="error-text">Sorry, we lost the trail :(. Try another question</span>
   </div>
   
   <!-- Debug section -->
   <div id="debug" class="debug">
     <div class="debug-header">
-      🔍 Debug Info
+      🗺️ Trail Log
       <button id="clear-log-btn" class="clear-log-btn">Clear</button>
     </div>
     <div id="debug-content" class="debug-content"></div>
