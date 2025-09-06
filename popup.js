@@ -162,7 +162,7 @@ async function pollForCompletion() {
         }
         
         attempts++;
-        setTimeout(poll, 5000); // Poll every 5 seconds
+        setTimeout(poll, 10000); // Poll every 10 seconds
       }
     } catch (error) {
       console.error('Polling error:', error);
