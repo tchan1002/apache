@@ -33,18 +33,18 @@
     }
     
     .input-group {
-      display: flex;
-      gap: 8px;
+      margin-bottom: 12px;
     }
     
     .question-input {
-      flex: 1;
+      width: 100%;
       padding: 10px 12px;
       border: 1px solid #d1d5db;
       border-radius: 8px;
       font-size: 14px;
       outline: none;
       transition: border-color 0.2s;
+      box-sizing: border-box;
     }
     
     .question-input:focus {
@@ -63,7 +63,8 @@
       cursor: pointer;
       transition: background-color 0.2s;
       white-space: nowrap;
-      margin-left: 8px;
+      width: 100%;
+      margin-bottom: 12px;
     }
     
     .analyze-btn:hover:not(:disabled), .query-btn:hover:not(:disabled) {
@@ -293,6 +294,8 @@
   </div>
   
   <div id="question-section" class="question-section">
+    <button id="analyze-btn" class="analyze-btn">1. Analyze Site</button>
+    
     <div class="input-group">
       <input 
         type="text" 
@@ -300,9 +303,9 @@
         placeholder="e.g., forgot clinic phone number"
         class="question-input"
       />
-      <button id="analyze-btn" class="analyze-btn">1. Analyze Site</button>
-      <button id="query-btn" class="query-btn hidden">2. Ask Question</button>
     </div>
+    
+    <button id="query-btn" class="query-btn hidden">2. Ask Question</button>
   </div>
   
   <div id="status" class="status hidden">
