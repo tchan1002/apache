@@ -112,7 +112,7 @@ async function handleCheck() {
 }
 
 async function pollForCompletion() {
-  const maxAttempts = 300; // 5 minutes max
+  const maxAttempts = 60; // 5 minutes max (poll every 5 seconds)
   let attempts = 0;
   
   const poll = async () => {
@@ -151,7 +151,7 @@ async function pollForCompletion() {
       } else {
         // Update progress
         const progress = data.progress;
-        if (progress) {
+        if (progress && progress.pages_scanned > 0) {
           showStatus(`Crawling... (${progress.pages_scanned} pages found)`, 'working');
           console.log('📈 Crawling progress:', progress);
           addDebugLog(`📈 Progress: ${progress.pages_scanned} pages found`);
@@ -162,7 +162,7 @@ async function pollForCompletion() {
         }
         
         attempts++;
-        setTimeout(poll, 2000); // Poll every 2 seconds
+        setTimeout(poll, 5000); // Poll every 5 seconds
       }
     } catch (error) {
       console.error('Polling error:', error);
