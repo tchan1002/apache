@@ -113,6 +113,11 @@ async function checkWebsiteStatus() {
     
     addDebugLog(`🍃 Real-time website check: ${tabUrl}`);
     
+    // Ensure clean UI state before checking
+    questionInputEl.classList.add('hidden');
+    queryBtnEl.classList.add('hidden');
+    statusEl.classList.add('hidden');
+    
     // ALWAYS perform real-time check with Pathfinder API
     // This ensures we detect if a previously scouted website has been deleted
     // Check for the specific URL path, not just the domain
@@ -234,6 +239,12 @@ function handleEnterKey(event) {
   if (event.key === 'Enter') {
     event.preventDefault(); // Prevent form submission
     
+    // Don't allow Enter key during scouting (when status is working)
+    if (statusEl.classList.contains('working') || mountaineeringUpdateInterval) {
+      addDebugLog('⌨️ Enter key pressed but ignored - currently scouting');
+      return;
+    }
+    
     // Check which button should be active
     if (!analyzeBtnEl.classList.contains('hidden')) {
       // Scout button is visible - trigger scouting
@@ -270,16 +281,15 @@ async function showScoutButton() {
   currentAnswer = null;
   currentSource = null;
   
-  // Hide query elements first
+  // Hide ALL other elements first
   queryBtnEl.classList.add('hidden');
   questionInputEl.classList.add('hidden');
   statusEl.classList.add('hidden');
   resultEl.classList.add('hidden');
   errorEl.classList.add('hidden');
   
-  // Show scout button and question section
+  // Show ONLY the scout button (not the entire question section)
   analyzeBtnEl.classList.remove('hidden');
-  questionSectionEl.classList.remove('hidden');
   
   // Debug: Check if button is visible
   addDebugLog(`🌿 Scout button classes: ${analyzeBtnEl.className}`);
@@ -374,6 +384,11 @@ async function handleAnalyze() {
     addDebugLog('🌲 Starting trail reconnaissance...');
     showStatus('Scouting the trail...', 'working');
     
+    // Hide scout button and question input during scouting
+    analyzeBtnEl.classList.add('hidden');
+    questionInputEl.classList.add('hidden');
+    queryBtnEl.classList.add('hidden');
+    
     // Get current tab URL
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const currentUrl = tab.url;
@@ -447,6 +462,10 @@ async function handleAnalyze() {
     // Now start exploring using the streaming crawl API
     addDebugLog('🌱 Starting trail exploration...');
     showStatus('Exploring the trail... This may take a few minutes.', 'working');
+    
+    // Hide question input during scouting
+    questionInputEl.classList.add('hidden');
+    queryBtnEl.classList.add('hidden');
     
     // Start mountaineering status updates after 5 seconds
     const statusUpdateInterval = setTimeout(() => {
