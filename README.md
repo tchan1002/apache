@@ -15,9 +15,11 @@ A Chrome extension that answers questions about any website by leveraging the Pa
 
 1. **Click the extension** on any webpage
 2. **Ask a question** like "forgot clinic phone number" or "how to contact support"
-3. **Get an answer** with source attribution
-4. **Navigate to source** if you want to see more details
-5. **Provide feedback** to help improve future answers
+3. **Extension analyzes** the current website (crawls and indexes content)
+4. **Extension queries** the analyzed content to find the best answer
+5. **Get an answer** with source attribution
+6. **Navigate to source** if you want to see more details
+7. **Provide feedback** to help improve future answers
 
 ## Installation
 
@@ -41,8 +43,15 @@ The extension integrates with the Pathfinder API at:
 
 ### API Endpoints Used
 
-- `POST /query` - Ask questions about the current site
-  - Sends: `{ question: string, siteId: string }`
+- `POST /api/sherpa/v1/analyze` - Analyze the current website
+  - Sends: `{ start_url: string, user_id: string }`
+  - Returns: `{ mode: "cached"|"started", job_id: string, ... }`
+
+- `GET /api/sherpa/v1/jobs/{jobId}/status` - Poll analysis status
+  - Returns: `{ status: "queued"|"running"|"done"|"error", progress?: {...} }`
+
+- `POST /api/sherpa/v1/query` - Ask questions about the analyzed site
+  - Sends: `{ jobId: string, question: string }`
   - Returns: `{ answer: string, sources: Array<{url, title, snippet}> }`
 
 ## Permissions

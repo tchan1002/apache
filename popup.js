@@ -1,10 +1,13 @@
 // API Configuration
-const API_BASE = 'https://pathfinder-bay-mu.vercel.app/api';
+const SHERPA_API_BASE = 'https://pathfinder-bay-mu.vercel.app/api/sherpa/v1';
+const QUERY_API_BASE = 'https://pathfinder-bay-mu.vercel.app/api';
 
 // State
 let currentQuestion = '';
 let currentAnswer = null;
 let currentSource = null;
+let currentSiteId = null;
+let currentJobId = null;
 
 // DOM Elements
 const questionSectionEl = document.getElementById('question-section');
@@ -52,31 +55,115 @@ async function handleAsk() {
   
   currentQuestion = question;
   askBtnEl.disabled = true;
-  askBtnEl.textContent = 'Asking...';
+  askBtnEl.textContent = 'Analyzing...';
   
   try {
-    showStatus('Searching for answer...', 'working');
-    
     // Get current tab URL for context
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.url) {
       throw new Error('No active tab found');
     }
     
-    // Call query endpoint
-    const response = await fetch(`${API_BASE}/query`, {
+    // Step 1: Analyze the current website
+    showStatus('Analyzing website...', 'working');
+    const analyzeResponse = await fetch(`${SHERPA_API_BASE}/analyze`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        question: question,
-        siteId: extractSiteIdFromUrl(tab.url),
+        start_url: tab.url,
+        user_id: 'sherpa-extension',
+      }),
+    });
+
+    if (!analyzeResponse.ok) {
+      throw new Error(`Analysis failed: HTTP ${analyzeResponse.status}`);
+    }
+
+    const analyzeData = await analyzeResponse.json();
+    
+    if (analyzeData.mode === 'cached') {
+      // Use cached results immediately
+      currentSiteId = analyzeData.job_id; // For cached results, job_id is the siteId
+      await queryWithQuestion();
+    } else if (analyzeData.mode === 'started') {
+      // Poll for completion
+      currentJobId = analyzeData.job_id;
+      await pollForCompletion();
+    } else {
+      throw new Error('Unknown analysis response mode');
+    }
+  } catch (error) {
+    console.error('Analysis error:', error);
+    showError('Sorry, we got lost :(. Try another question');
+  } finally {
+    askBtnEl.disabled = false;
+    askBtnEl.textContent = 'Ask';
+  }
+}
+
+async function pollForCompletion() {
+  const maxAttempts = 30; // 30 seconds max
+  let attempts = 0;
+  
+  const poll = async () => {
+    try {
+      const response = await fetch(`${SHERPA_API_BASE}/jobs/${currentJobId}/status`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      const data = await response.json();
+      
+      if (data.status === 'done') {
+        // Get results to get the siteId
+        const resultsResponse = await fetch(`${SHERPA_API_BASE}/results/head?job_id=${currentJobId}`);
+        if (!resultsResponse.ok) throw new Error(`HTTP ${resultsResponse.status}`);
+        
+        const results = await resultsResponse.json();
+        currentSiteId = currentJobId; // Use jobId as siteId for now
+        await queryWithQuestion();
+      } else if (data.status === 'error') {
+        throw new Error('Analysis failed');
+      } else if (attempts >= maxAttempts) {
+        throw new Error('Analysis timeout');
+      } else {
+        // Update progress
+        const progress = data.progress;
+        if (progress) {
+          showStatus(`Analyzing... (${progress.pages_scanned}/${progress.pages_total_est || '?'} pages)`, 'working');
+        }
+        
+        // Continue polling
+        attempts++;
+        setTimeout(poll, 1000);
+      }
+    } catch (error) {
+      console.error('Polling error:', error);
+      showError('Sorry, we got lost :(. Try another question');
+    }
+  };
+  
+  poll();
+}
+
+async function queryWithQuestion() {
+  try {
+    showStatus('Searching for answer...', 'working');
+    
+    // Step 2: Query the analyzed content using the Sherpa query endpoint
+    const response = await fetch(`${SHERPA_API_BASE}/query`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jobId: currentSiteId, // Use the jobId/siteId from analysis
+        question: currentQuestion,
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      throw new Error(`Query failed: HTTP ${response.status}`);
     }
 
     const data = await response.json();
@@ -91,9 +178,6 @@ async function handleAsk() {
   } catch (error) {
     console.error('Query error:', error);
     showError('Sorry, we got lost :(. Try another question');
-  } finally {
-    askBtnEl.disabled = false;
-    askBtnEl.textContent = 'Ask';
   }
 }
 
