@@ -6,6 +6,7 @@ let currentQuestion = '';
 let currentAnswer = null;
 let currentSource = null;
 let currentSiteId = null;
+let currentUrl = null;
 let currentDomain = null;
 let isScouted = false;
 
@@ -40,8 +41,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load persistent state
   await loadPersistentState();
   
-  // Check if current domain is already scouted
-  await checkDomainStatus();
+  // Check if current website is already scouted
+  await checkWebsiteStatus();
   
   addDebugLog('Sherpa guide ready - ready to scout trails');
 });
@@ -53,12 +54,12 @@ async function loadPersistentState() {
     if (result.sherpaState) {
       const state = result.sherpaState;
       currentSiteId = state.siteId;
+      currentUrl = state.url;
       currentDomain = state.domain;
       isScouted = state.isScouted;
       
       if (isScouted && currentSiteId) {
-        addDebugLog(`🌿 Restored state for domain: ${currentDomain}`);
-        showQueryButton();
+        addDebugLog(`🌿 Restored state for website: ${currentUrl}`);
       }
     }
   } catch (error) {
@@ -71,57 +72,68 @@ async function savePersistentState() {
   try {
     const state = {
       siteId: currentSiteId,
+      url: currentUrl,
       domain: currentDomain,
       isScouted: isScouted,
       timestamp: Date.now()
     };
     await chrome.storage.local.set({ sherpaState: state });
-    addDebugLog(`🌿 Saved state for domain: ${currentDomain}`);
+    addDebugLog(`🌿 Saved state for website: ${currentUrl}`);
   } catch (error) {
     addDebugLog(`🍂 Failed to save persistent state: ${error.message}`);
   }
 }
 
-// Check if current domain is already scouted
-async function checkDomainStatus() {
+// Check if current website is already scouted
+async function checkWebsiteStatus() {
   try {
     // Get current tab URL
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const currentUrl = tab.url;
+    const tabUrl = tab.url;
     
-    if (!currentUrl || currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) {
+    if (!tabUrl || tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://')) {
       hideScoutButton();
       return;
     }
     
-    const domain = extractDomain(currentUrl);
-    currentDomain = domain;
+    // Check if this is the same website we have state for
+    if (currentUrl === tabUrl && isScouted && currentSiteId) {
+      addDebugLog(`🌿 Same website detected: ${tabUrl}`);
+      hideScoutButton();
+      showQueryButton();
+      showStatus('Trail already scouted! Ready for your questions.', 'success');
+      return;
+    }
     
-    addDebugLog(`🍃 Checking domain status: ${domain}`);
+    // New website - check if it's already scouted
+    currentUrl = tabUrl;
+    currentDomain = extractDomain(tabUrl);
     
-    // Check if domain is already scouted
+    addDebugLog(`🍃 Checking website status: ${tabUrl}`);
+    
+    // Check if website is already scouted
     const checkResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
-        url: currentUrl,
+        url: tabUrl,
         checkVectorIndex: true
       }),
     });
     
     if (checkResponse.ok) {
       const checkData = await checkResponse.json();
-      addDebugLog(`🌿 Domain check response: ${JSON.stringify(checkData, null, 2)}`);
+      addDebugLog(`🌿 Website check response: ${JSON.stringify(checkData, null, 2)}`);
       
       if (checkData.exists && checkData.pages && checkData.pages.length > 0) {
-        // Domain is already scouted
+        // Website is already scouted
         currentSiteId = checkData.siteId;
         isScouted = true;
         await savePersistentState();
         
-        addDebugLog('🌿 Domain already scouted - hiding scout button');
+        addDebugLog('🌿 Website already scouted - hiding scout button');
         hideScoutButton();
         showQueryButton();
         showStatus('Trail already scouted! Ready for your questions.', 'success');
@@ -129,28 +141,120 @@ async function checkDomainStatus() {
       }
     }
     
-    // Domain not scouted - show scout button
-    addDebugLog('🌿 Domain not scouted - showing scout button');
+    // Website not scouted - show scout button
+    addDebugLog('🌿 Website not scouted - showing scout button');
     showScoutButton();
     
   } catch (error) {
-    addDebugLog(`🍂 Domain check failed: ${error.message}`);
+    addDebugLog(`🍂 Website check failed: ${error.message}`);
     // On error, show scout button as fallback
     showScoutButton();
   }
 }
 
-// Hide scout button and show query section
+// Hide scout button and show query section with smooth animation
 function hideScoutButton() {
-  analyzeBtnEl.style.display = 'none';
-  showQueryButton();
+  addDebugLog('🌿 Hiding scout button with animation');
+  
+  // Animate out scout button
+  analyzeBtnEl.classList.add('hidden');
+  
+  // Wait for animation to complete, then show query section
+  setTimeout(() => {
+    showQueryButton();
+  }, 300);
 }
 
-// Show scout button
+// Show scout button with smooth animation
 function showScoutButton() {
-  analyzeBtnEl.style.display = 'block';
-  queryBtnEl.style.display = 'none';
-  questionSectionEl.style.display = 'none';
+  addDebugLog('🌿 Showing scout button with animation');
+  
+  // Hide query section first
+  queryBtnEl.classList.add('hidden');
+  questionSectionEl.classList.add('hidden');
+  
+  // Show scout button
+  setTimeout(() => {
+    analyzeBtnEl.classList.remove('hidden');
+  }, 100);
+}
+
+// Show query button and input with smooth animation
+function showQueryButton() {
+  addDebugLog('🌿 Showing query section with animation');
+  
+  // Show query button and input section
+  setTimeout(() => {
+    queryBtnEl.classList.remove('hidden');
+    questionSectionEl.classList.remove('hidden');
+  }, 200);
+}
+
+// Show status with smooth animation
+function showStatus(message, type) {
+  statusTextEl.textContent = message;
+  statusEl.className = `status ${type}`;
+  statusEl.classList.remove('hidden');
+  
+  // Add loading animation for working status
+  if (type === 'working') {
+    statusTextEl.classList.add('loading-dots');
+  } else {
+    statusTextEl.classList.remove('loading-dots');
+  }
+  
+  addDebugLog(`🌿 Trail status: ${message}`);
+}
+
+// Hide status with smooth animation
+function hideStatus() {
+  statusEl.classList.add('hidden');
+}
+
+// Show result with smooth animation
+function showResult(answer, sources) {
+  addDebugLog('🌿 Showing result with animation');
+  
+  // Hide status first
+  hideStatus();
+  
+  // Show result
+  setTimeout(() => {
+    resultEl.classList.remove('hidden');
+    
+    // Check if answer is "I don't know" and provide special message
+    if (answer.toLowerCase().includes("i don't know") || answer.toLowerCase().includes("i do not know")) {
+      answerTextEl.textContent = "Sherpa's not sure, but check out the trail marker below!";
+    } else {
+      answerTextEl.textContent = answer;
+    }
+    
+    if (sources.length > 0) {
+      const source = sources[0];
+      sourceTitleEl.textContent = source.title || 'Untitled';
+      sourceUrlEl.textContent = source.url;
+      goToSourceBtnEl.onclick = () => {
+        chrome.tabs.create({ url: source.url });
+      };
+    }
+  }, 200);
+}
+
+// Show error with smooth animation
+function showError(message) {
+  errorTextEl.textContent = message;
+  errorEl.classList.remove('hidden');
+  addDebugLog(`🍂 Error: ${message}`);
+  
+  // Auto-hide error after 5 seconds
+  setTimeout(() => {
+    errorEl.classList.add('hidden');
+  }, 5000);
+}
+
+// Hide error with smooth animation
+function hideError() {
+  errorEl.classList.add('hidden');
 }
 
 async function handleAnalyze() {
@@ -173,8 +277,8 @@ async function handleAnalyze() {
     currentDomain = domain;
     addDebugLog(`🌿 Trail base camp: ${domain}`);
     
-    // OPTIMIZED: Check if domain already exists (faster than URL check)
-    addDebugLog('🍃 Checking if domain already mapped...');
+    // OPTIMIZED: Check if website already exists (faster than URL check)
+    addDebugLog('🍃 Checking if website already mapped...');
     const checkResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
       method: 'POST',
       headers: {
@@ -197,7 +301,6 @@ async function handleAnalyze() {
         await savePersistentState();
         
         hideScoutButton();
-        showQueryButton();
         showStatus('Trail already scouted! Ready for your questions.', 'success');
         return;
       }
@@ -270,7 +373,6 @@ async function handleAnalyze() {
                 await savePersistentState();
                 
                 hideScoutButton();
-                showQueryButton();
                 showStatus('Trail scouted! Ready for your questions.', 'success');
                 return;
               } else if (data.type === 'status' && data.message.includes('error')) {
@@ -479,44 +581,6 @@ function extractDomain(url) {
     return new URL(url).hostname;
   } catch {
     return url;
-  }
-}
-
-function showQueryButton() {
-  queryBtnEl.style.display = 'block';
-  questionSectionEl.style.display = 'block';
-}
-
-function showStatus(message, type) {
-  statusEl.style.display = 'block';
-  statusTextEl.textContent = message;
-  statusEl.className = `status ${type}`;
-  addDebugLog(`🌿 Trail status: ${message}`);
-}
-
-function showError(message) {
-  errorEl.style.display = 'block';
-  errorTextEl.textContent = message;
-  addDebugLog(`🍂 Error: ${message}`);
-}
-
-function showResult(answer, sources) {
-  resultEl.style.display = 'block';
-  
-  // Check if answer is "I don't know" and provide special message
-  if (answer.toLowerCase().includes("i don't know") || answer.toLowerCase().includes("i do not know")) {
-    answerTextEl.textContent = "Sherpa's not sure, but check out the trail marker below!";
-  } else {
-  answerTextEl.textContent = answer;
-  }
-  
-  if (sources.length > 0) {
-    const source = sources[0];
-    sourceTitleEl.textContent = source.title || 'Untitled';
-    sourceUrlEl.textContent = source.url;
-    goToSourceBtnEl.onclick = () => {
-      chrome.tabs.create({ url: source.url });
-    };
   }
 }
 
