@@ -174,7 +174,7 @@ function showQueryButton() {
 }
 
 async function pollForCompletion() {
-  const maxAttempts = 30; // 30 seconds max
+  const maxAttempts = 300; // 5 minutes max (increased from 30 seconds)
   let attempts = 0;
   
   const poll = async () => {
