@@ -1,11 +1,11 @@
 // Background service worker for Sherpa extension
 
-console.log('🏔️ Sherpa trail guide background service loaded - ready to assist your journey');
+console.log('🌲 Sherpa trail guide background service loaded - ready to assist your journey');
 
 // Handle extension installation
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
-    console.log('🏔️ Sherpa trail guide extension installed - your digital mountaineering companion is ready!');
+    console.log('🌲 Sherpa trail guide extension installed - your digital mountaineering companion is ready!');
   }
 });
 

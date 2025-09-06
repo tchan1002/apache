@@ -40,14 +40,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function handleAnalyze() {
   try {
-    addDebugLog('🏔️ Starting trail reconnaissance...');
+    addDebugLog('🌲 Starting trail reconnaissance...');
     showStatus('Scouting the trail...', 'working');
     
     // Get current tab URL
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const currentUrl = tab.url;
     
-    addDebugLog(`🗺️ Current trail location: ${currentUrl}`);
+    addDebugLog(`🍃 Current trail location: ${currentUrl}`);
     
     if (!currentUrl || currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) {
       throw new Error('Cannot scout this trail. Please navigate to a website first.');
@@ -55,10 +55,10 @@ async function handleAnalyze() {
     
     // Extract domain from URL
     const domain = extractDomain(currentUrl);
-    addDebugLog(`🏔️ Trail base camp: ${domain}`);
+    addDebugLog(`🌿 Trail base camp: ${domain}`);
     
     // Check if site already exists
-    addDebugLog('🗺️ Checking if trail already mapped...');
+    addDebugLog('🍃 Checking if trail already mapped...');
     const checkResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
       method: 'POST',
       headers: {
@@ -69,10 +69,10 @@ async function handleAnalyze() {
     
     if (checkResponse.ok) {
       const checkData = await checkResponse.json();
-      addDebugLog(`📊 Check response: ${JSON.stringify(checkData, null, 2)}`);
+      addDebugLog(`🌿 Check response: ${JSON.stringify(checkData, null, 2)}`);
       
       if (checkData.exists && checkData.pages && checkData.pages.length > 0) {
-        addDebugLog('✅ Trail already mapped with waypoints');
+        addDebugLog('🌿 Trail already mapped with waypoints');
         showStatus('Trail already scouted! Ready for your questions.', 'success');
         currentSiteId = checkData.siteId;
         showQueryButton();
@@ -81,7 +81,7 @@ async function handleAnalyze() {
     }
     
     // Trail doesn't exist or has no waypoints, need to create and explore
-    addDebugLog('🏔️ Trail needs exploration, setting up base camp...');
+    addDebugLog('🌳 Trail needs exploration, setting up base camp...');
     
     // Create site first
     const createSiteResponse = await fetch(`${PATHFINDER_API_BASE}/site`, {
@@ -97,28 +97,28 @@ async function handleAnalyze() {
     
     if (!createSiteResponse.ok) {
       const errorText = await createSiteResponse.text();
-      addDebugLog(`❌ Base camp setup error: HTTP ${createSiteResponse.status} - ${errorText}`);
+      addDebugLog(`🍂 Base camp setup error: HTTP ${createSiteResponse.status} - ${errorText}`);
       throw new Error(`Failed to set up base camp: HTTP ${createSiteResponse.status} - ${errorText}`);
     }
     
     const siteData = await createSiteResponse.json();
-    addDebugLog(`✅ Base camp established: ${JSON.stringify(siteData, null, 2)}`);
+    addDebugLog(`🌿 Base camp established: ${JSON.stringify(siteData, null, 2)}`);
     currentSiteId = siteData.id;
     
     // Now start exploring using the streaming crawl API
-    addDebugLog('🥾 Starting trail exploration...');
+    addDebugLog('🌱 Starting trail exploration...');
     showStatus('Exploring the trail... This may take a few minutes.', 'working');
     
     // Use the streaming crawl endpoint which is more reliable
     const crawlUrl = `${PATHFINDER_API_BASE}/crawl/stream?siteId=${currentSiteId}&startUrl=${encodeURIComponent(currentUrl)}`;
-    addDebugLog(`🗺️ Exploration route: ${crawlUrl}`);
+    addDebugLog(`🍃 Exploration route: ${crawlUrl}`);
     
     try {
       const response = await fetch(crawlUrl);
       
       if (!response.ok) {
         const errorText = await response.text();
-        addDebugLog(`❌ Exploration error: HTTP ${response.status} - ${errorText}`);
+        addDebugLog(`🍂 Exploration error: HTTP ${response.status} - ${errorText}`);
         throw new Error(`Trail exploration failed: HTTP ${response.status} - ${errorText}`);
       }
       
@@ -139,10 +139,10 @@ async function handleAnalyze() {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
-              addDebugLog(`📡 Trail progress: ${data.type} - ${data.message || data.url || ''}`);
+              addDebugLog(`🦋 Trail progress: ${data.type} - ${data.message || data.url || ''}`);
               
               if (data.type === 'done') {
-                addDebugLog('✅ Trail exploration completed successfully');
+                addDebugLog('🌿 Trail exploration completed successfully');
                 showStatus('Trail scouted! Ready for your questions.', 'success');
                 showQueryButton();
                 return;
@@ -157,13 +157,13 @@ async function handleAnalyze() {
       }
       
     } catch (error) {
-      addDebugLog(`❌ Trail exploration stream error: ${error.message}`);
+      addDebugLog(`🍂 Trail exploration stream error: ${error.message}`);
       throw error;
     }
     
   } catch (error) {
     console.error('Trail scouting error:', error);
-    addDebugLog(`❌ Trail scouting error: ${error.message}`);
+    addDebugLog(`🍂 Trail scouting error: ${error.message}`);
     showError(`Trail scouting failed: ${error.message}`);
   }
 }
@@ -181,7 +181,7 @@ async function handleQuery() {
       return;
     }
     
-    addDebugLog(`🗣️ Asking Sherpa: "${question}"`);
+    addDebugLog(`🐦 Asking Sherpa: "${question}"`);
     showStatus('Consulting Sherpa...', 'working');
     
     // Use the existing query API
@@ -196,16 +196,16 @@ async function handleQuery() {
       }),
     });
     
-    addDebugLog(`📥 Sherpa response status: ${response.status}`);
+    addDebugLog(`🌊 Sherpa response status: ${response.status}`);
     
     if (!response.ok) {
       const errorText = await response.text();
-      addDebugLog(`❌ Sherpa response error: HTTP ${response.status} - ${errorText}`);
+      addDebugLog(`🍂 Sherpa response error: HTTP ${response.status} - ${errorText}`);
       throw new Error(`Sherpa consultation failed: HTTP ${response.status} - ${errorText}`);
     }
     
     const data = await response.json();
-    addDebugLog(`📊 Sherpa response: ${JSON.stringify(data, null, 2)}`);
+    addDebugLog(`🌿 Sherpa response: ${JSON.stringify(data, null, 2)}`);
     
     // Display the answer
     currentAnswer = data.answer;
@@ -216,7 +216,7 @@ async function handleQuery() {
     
   } catch (error) {
     console.error('Sherpa consultation error:', error);
-    addDebugLog(`❌ Sherpa consultation error: ${error.message}`);
+    addDebugLog(`🍂 Sherpa consultation error: ${error.message}`);
     showError(`Sherpa consultation failed: ${error.message}`);
   }
 }
@@ -239,13 +239,13 @@ function showStatus(message, type) {
   statusEl.style.display = 'block';
   statusTextEl.textContent = message;
   statusEl.className = `status ${type}`;
-  addDebugLog(`📊 Trail status: ${message}`);
+  addDebugLog(`🌿 Trail status: ${message}`);
 }
 
 function showError(message) {
   errorEl.style.display = 'block';
   errorTextEl.textContent = message;
-  addDebugLog(`❌ Error: ${message}`);
+  addDebugLog(`🍂 Error: ${message}`);
 }
 
 function showResult(answer, sources) {
