@@ -277,6 +277,24 @@
       font-weight: 600;
       color: #374151;
       margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .clear-log-btn {
+      padding: 4px 8px;
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .clear-log-btn:hover {
+      background: #dc2626;
     }
     
     .debug-content {
@@ -343,8 +361,11 @@
   </div>
   
   <!-- Debug section -->
-  <div id="debug" class="debug hidden">
-    <div class="debug-header">🔍 Debug Info</div>
+  <div id="debug" class="debug">
+    <div class="debug-header">
+      🔍 Debug Info
+      <button id="clear-log-btn" class="clear-log-btn">Clear</button>
+    </div>
     <div id="debug-content" class="debug-content"></div>
   </div>
   

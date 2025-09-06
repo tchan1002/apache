@@ -29,6 +29,7 @@ const errorEl = document.getElementById('error');
 const errorTextEl = document.getElementById('error-text');
 const debugEl = document.getElementById('debug');
 const debugContentEl = document.getElementById('debug-content');
+const clearLogBtnEl = document.getElementById('clear-log-btn');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -51,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   yesBtnEl.addEventListener('click', () => submitFeedback(true));
   noBtnEl.addEventListener('click', () => submitFeedback(false));
+  clearLogBtnEl.addEventListener('click', clearDebugLog);
 });
 
 async function handleAnalyze() {
@@ -403,15 +405,22 @@ function hideAll() {
   resultEl.classList.add('hidden');
   errorEl.classList.add('hidden');
   feedbackEl.classList.add('hidden');
-  debugEl.classList.add('hidden');
+  // Keep debug panel always visible
+  // debugEl.classList.add('hidden');
 }
 
 function addDebugLog(message) {
   const timestamp = new Date().toLocaleTimeString();
   const logEntry = `[${timestamp}] ${message}\n`;
   debugContentEl.textContent += logEntry;
+  // Always keep debug panel visible
   debugEl.classList.remove('hidden');
   console.log(message);
+}
+
+function clearDebugLog() {
+  debugContentEl.textContent = '';
+  addDebugLog('Debug log cleared');
 }
 
 async function submitFeedback(wasHelpful) {
