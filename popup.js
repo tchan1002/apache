@@ -57,14 +57,17 @@ async function handleAnalyze() {
     const domain = extractDomain(currentUrl);
     addDebugLog(`🌿 Trail base camp: ${domain}`);
     
-    // Check if site already exists
-    addDebugLog('🍃 Checking if trail already mapped...');
+    // OPTIMIZED: Check if domain already exists (faster than URL check)
+    addDebugLog('🍃 Checking if domain already mapped...');
     const checkResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url: currentUrl }),
+      body: JSON.stringify({ 
+        url: currentUrl,  // API extracts domain internally
+        checkVectorIndex: true  // Check if embeddings exist
+      }),
     });
     
     if (checkResponse.ok) {
@@ -184,7 +187,132 @@ async function handleQuery() {
     addDebugLog(`🐦 Asking Sherpa: "${question}"`);
     showStatus('Consulting Sherpa...', 'working');
     
-    // Use the existing query API
+    // OPTIMIZED: Try Pathfinder's native fast endpoints first
+    try {
+      addDebugLog('🌿 Step 1: Using Pathfinder native search...');
+      showStatus('Searching with Pathfinder...', 'working');
+      
+      // Try Pathfinder's native search endpoint (likely fastest)
+      const searchResponse = await fetch(`${PATHFINDER_API_BASE}/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          siteId: currentSiteId,
+          query: question,
+          limit: 3,
+          useVectorSearch: true,  // Enable vector search if available
+          similarityThreshold: 0.7,
+        }),
+      });
+      
+      if (searchResponse.ok) {
+        const searchData = await searchResponse.json();
+        addDebugLog(`🌿 Pathfinder search found ${searchData.results?.length || 0} relevant pages`);
+        
+        if (searchData.results && searchData.results.length > 0) {
+          showStatus('Found relevant pages, generating answer...', 'working');
+          
+          // Use Pathfinder's native query with pre-ranked results
+          const queryResponse = await fetch(`${PATHFINDER_API_BASE}/query`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              siteId: currentSiteId,
+              question: question,
+              // Pass pre-ranked results for faster generation
+              context: searchData.results.slice(0, 2).map(r => ({ 
+                url: r.url, 
+                title: r.title,
+                relevance: r.relevance || r.similarity 
+              })),
+              usePreRankedResults: true
+            }),
+          });
+          
+          if (queryResponse.ok) {
+            const data = await queryResponse.json();
+            addDebugLog(`🌿 Pathfinder-optimized response: ${JSON.stringify(data, null, 2)}`);
+            
+            currentAnswer = data.answer;
+            currentSource = data.sources && data.sources.length > 0 ? data.sources[0] : null;
+            
+            showResult(data.answer, data.sources || []);
+            showStatus("Sherpa's found a spot!", 'success');
+            return;
+          }
+        }
+      }
+    } catch (pathfinderError) {
+      addDebugLog(`🍂 Pathfinder native search failed, trying Sherpa endpoints: ${pathfinderError.message}`);
+    }
+    
+    // Fallback: Try Sherpa's vector search
+    try {
+      addDebugLog('🌿 Step 2: Using Sherpa vector search...');
+      showStatus('Using vector embeddings...', 'working');
+      
+      const vectorResponse = await fetch(`${PATHFINDER_API_BASE}/vector-search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          siteId: currentSiteId,
+          query: question,
+          limit: 3,
+          useEmbeddings: true,
+          similarityThreshold: 0.7,
+        }),
+      });
+      
+      if (vectorResponse.ok) {
+        const vectorData = await vectorResponse.json();
+        addDebugLog(`🌿 Vector search found ${vectorData.results?.length || 0} relevant pages`);
+        
+        if (vectorData.results && vectorData.results.length > 0) {
+          showStatus('Found relevant pages, generating answer...', 'working');
+          
+          const queryResponse = await fetch(`${PATHFINDER_API_BASE}/query`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              siteId: currentSiteId,
+              question: question,
+              context: vectorData.results.slice(0, 2).map(r => ({ 
+                url: r.url, 
+                title: r.title,
+                similarity: r.similarity 
+              })),
+            }),
+          });
+          
+          if (queryResponse.ok) {
+            const data = await queryResponse.json();
+            addDebugLog(`🌿 Vector-optimized response: ${JSON.stringify(data, null, 2)}`);
+            
+            currentAnswer = data.answer;
+            currentSource = data.sources && data.sources.length > 0 ? data.sources[0] : null;
+            
+            showResult(data.answer, data.sources || []);
+            showStatus("Sherpa's found a spot!", 'success');
+            return;
+          }
+        }
+      }
+    } catch (vectorError) {
+      addDebugLog(`🍂 Vector search failed, using standard query: ${vectorError.message}`);
+    }
+    
+    // Final fallback: Standard query
+    addDebugLog('🌿 Final fallback: Using standard query...');
+    showStatus('Generating answer...', 'working');
+    
     const response = await fetch(`${PATHFINDER_API_BASE}/query`, {
       method: 'POST',
       headers: {
@@ -255,7 +383,7 @@ function showResult(answer, sources) {
   if (answer.toLowerCase().includes("i don't know") || answer.toLowerCase().includes("i do not know")) {
     answerTextEl.textContent = "Sherpa's not sure, but check out the trail marker below!";
   } else {
-    answerTextEl.textContent = answer;
+  answerTextEl.textContent = answer;
   }
   
   if (sources.length > 0) {
