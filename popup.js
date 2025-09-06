@@ -26,6 +26,8 @@ const yesBtnEl = document.getElementById('yes-btn');
 const noBtnEl = document.getElementById('no-btn');
 const errorEl = document.getElementById('error');
 const errorTextEl = document.getElementById('error-text');
+const debugEl = document.getElementById('debug');
+const debugContentEl = document.getElementById('debug-content');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -58,14 +60,22 @@ async function handleAsk() {
   askBtnEl.textContent = 'Analyzing...';
   
   try {
-    // Get current tab URL for context
+    // Step 1: Get current tab URL
+    showStatus('Getting current website URL...', 'working');
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.url) {
       throw new Error('No active tab found');
     }
     
-    // Step 1: Analyze the current website
-    showStatus('Analyzing website...', 'working');
+    console.log('🔍 Current tab URL:', tab.url);
+    addDebugLog(`🔍 Current tab URL: ${tab.url}`);
+    showStatus(`Found website: ${tab.url}`, 'working');
+    
+    // Step 2: Send to Pathfinder for analysis
+    showStatus('Sending website to Pathfinder for analysis...', 'working');
+    console.log('📤 Sending analyze request to:', `${SHERPA_API_BASE}/analyze`);
+    addDebugLog(`📤 Sending analyze request to: ${SHERPA_API_BASE}/analyze`);
+    
     const analyzeResponse = await fetch(`${SHERPA_API_BASE}/analyze`, {
       method: 'POST',
       headers: {
@@ -77,26 +87,40 @@ async function handleAsk() {
       }),
     });
 
+    console.log('📥 Analyze response status:', analyzeResponse.status);
+    addDebugLog(`📥 Analyze response status: ${analyzeResponse.status}`);
+    
     if (!analyzeResponse.ok) {
-      throw new Error(`Analysis failed: HTTP ${analyzeResponse.status}`);
+      const errorText = await analyzeResponse.text();
+      console.error('❌ Analyze response error:', errorText);
+      throw new Error(`Analysis failed: HTTP ${analyzeResponse.status} - ${errorText}`);
     }
 
     const analyzeData = await analyzeResponse.json();
+    console.log('📊 Analyze response data:', analyzeData);
+    addDebugLog(`📊 Analyze response: ${JSON.stringify(analyzeData, null, 2)}`);
     
     if (analyzeData.mode === 'cached') {
       // Use cached results immediately
+      showStatus('Using cached analysis results...', 'working');
       currentSiteId = analyzeData.job_id; // For cached results, job_id is the siteId
+      console.log('✅ Using cached jobId as siteId:', currentSiteId);
+      addDebugLog(`✅ Using cached jobId as siteId: ${currentSiteId}`);
       await queryWithQuestion();
     } else if (analyzeData.mode === 'started') {
       // Poll for completion
+      showStatus('Pathfinder is crawling the website...', 'working');
       currentJobId = analyzeData.job_id;
+      console.log('🔄 Started crawling job:', currentJobId);
+      addDebugLog(`🔄 Started crawling job: ${currentJobId}`);
       await pollForCompletion();
     } else {
-      throw new Error('Unknown analysis response mode');
+      console.error('❌ Unknown analysis response mode:', analyzeData.mode);
+      throw new Error(`Unknown analysis response mode: ${analyzeData.mode}`);
     }
   } catch (error) {
-    console.error('Analysis error:', error);
-    showError('Sorry, we got lost :(. Try another question');
+    console.error('❌ Analysis error:', error);
+    showError(`Analysis failed: ${error.message}`);
   } finally {
     askBtnEl.disabled = false;
     askBtnEl.textContent = 'Ask';
@@ -109,28 +133,56 @@ async function pollForCompletion() {
   
   const poll = async () => {
     try {
+      console.log(`🔄 Polling job status (attempt ${attempts + 1}/${maxAttempts}):`, currentJobId);
+      showStatus(`Crawling... (checking progress ${attempts + 1}/${maxAttempts})`, 'working');
+      
       const response = await fetch(`${SHERPA_API_BASE}/jobs/${currentJobId}/status`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      console.log('📥 Job status response:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Job status error:', errorText);
+        throw new Error(`Job status failed: HTTP ${response.status} - ${errorText}`);
+      }
       
       const data = await response.json();
+      console.log('📊 Job status data:', data);
       
       if (data.status === 'done') {
+        showStatus('Crawling completed! Getting results...', 'working');
+        console.log('✅ Job completed, getting results...');
+        
         // Get results to get the siteId
         const resultsResponse = await fetch(`${SHERPA_API_BASE}/results/head?job_id=${currentJobId}`);
-        if (!resultsResponse.ok) throw new Error(`HTTP ${resultsResponse.status}`);
+        console.log('📥 Results response:', resultsResponse.status);
+        
+        if (!resultsResponse.ok) {
+          const errorText = await resultsResponse.text();
+          console.error('❌ Results error:', errorText);
+          throw new Error(`Results failed: HTTP ${resultsResponse.status} - ${errorText}`);
+        }
         
         const results = await resultsResponse.json();
+        console.log('📊 Results data:', results);
+        
         currentSiteId = currentJobId; // Use jobId as siteId for now
+        console.log('✅ Using jobId as siteId for query:', currentSiteId);
         await queryWithQuestion();
       } else if (data.status === 'error') {
-        throw new Error('Analysis failed');
+        console.error('❌ Job failed with error status');
+        throw new Error('Analysis failed - job returned error status');
       } else if (attempts >= maxAttempts) {
-        throw new Error('Analysis timeout');
+        console.error('❌ Polling timeout after', maxAttempts, 'attempts');
+        throw new Error(`Analysis timeout after ${maxAttempts} seconds`);
       } else {
         // Update progress
         const progress = data.progress;
         if (progress) {
-          showStatus(`Analyzing... (${progress.pages_scanned}/${progress.pages_total_est || '?'} pages)`, 'working');
+          showStatus(`Crawling... (${progress.pages_scanned}/${progress.pages_total_est || '?'} pages)`, 'working');
+          console.log('📈 Crawling progress:', progress);
+        } else {
+          showStatus(`Crawling... (${data.status})`, 'working');
+          console.log('📈 Job status:', data.status);
         }
         
         // Continue polling
@@ -138,8 +190,8 @@ async function pollForCompletion() {
         setTimeout(poll, 1000);
       }
     } catch (error) {
-      console.error('Polling error:', error);
-      showError('Sorry, we got lost :(. Try another question');
+      console.error('❌ Polling error:', error);
+      showError(`Crawling failed: ${error.message}`);
     }
   };
   
@@ -148,7 +200,15 @@ async function pollForCompletion() {
 
 async function queryWithQuestion() {
   try {
-    showStatus('Searching for answer...', 'working');
+    showStatus('Pathfinder is searching for your answer...', 'working');
+    console.log('🔍 Sending query to Pathfinder...');
+    addDebugLog(`🔍 Sending query to Pathfinder...`);
+    console.log('📤 Query request:', {
+      jobId: currentSiteId,
+      question: currentQuestion,
+      endpoint: `${SHERPA_API_BASE}/query`
+    });
+    addDebugLog(`📤 Query request: jobId=${currentSiteId}, question="${currentQuestion}", endpoint=${SHERPA_API_BASE}/query`);
     
     // Step 2: Query the analyzed content using the Sherpa query endpoint
     const response = await fetch(`${SHERPA_API_BASE}/query`, {
@@ -162,22 +222,40 @@ async function queryWithQuestion() {
       }),
     });
 
+    console.log('📥 Query response status:', response.status);
+    addDebugLog(`📥 Query response status: ${response.status}`);
+    
     if (!response.ok) {
-      throw new Error(`Query failed: HTTP ${response.status}`);
+      const errorText = await response.text();
+      console.error('❌ Query response error:', errorText);
+      throw new Error(`Query failed: HTTP ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
+    console.log('📊 Query response data:', data);
+    addDebugLog(`📊 Query response: ${JSON.stringify(data, null, 2)}`);
     
     if (data.answer && data.sources && data.sources.length > 0) {
+      showStatus('Pathfinder found an answer!', 'working');
+      console.log('✅ Answer found:', data.answer);
+      console.log('✅ Sources found:', data.sources.length);
+      console.log('✅ Best source:', data.sources[0]);
+      addDebugLog(`✅ Answer found: ${data.answer}`);
+      addDebugLog(`✅ Sources found: ${data.sources.length}`);
+      addDebugLog(`✅ Best source: ${JSON.stringify(data.sources[0], null, 2)}`);
+      
       currentAnswer = data.answer;
       currentSource = data.sources[0]; // Use the first (best) source
-      showResult();
+      
+      showStatus('Displaying results...', 'working');
+      setTimeout(() => showResult(), 500); // Brief delay to show success message
     } else {
-      throw new Error('No answer found');
+      console.error('❌ No answer or sources in response:', data);
+      throw new Error(`No answer found. Response: ${JSON.stringify(data)}`);
     }
   } catch (error) {
-    console.error('Query error:', error);
-    showError('Sorry, we got lost :(. Try another question');
+    console.error('❌ Query error:', error);
+    showError(`Query failed: ${error.message}`);
   }
 }
 
@@ -197,12 +275,20 @@ function extractSiteIdFromUrl(url) {
 function showResult() {
   hideAll();
   
+  console.log('🎉 Showing results:', {
+    answer: currentAnswer,
+    source: currentSource
+  });
+  
   // Show answer
   answerTextEl.textContent = currentAnswer;
   
   // Show source
   sourceUrlEl.textContent = currentSource.url;
   sourceTitleEl.textContent = currentSource.title || 'Untitled';
+  
+  console.log('✅ Pathfinder returned URL:', currentSource.url);
+  console.log('✅ Pathfinder returned title:', currentSource.title);
   
   // Show result section
   resultEl.classList.remove('hidden');
@@ -238,6 +324,15 @@ function hideAll() {
   resultEl.classList.add('hidden');
   errorEl.classList.add('hidden');
   feedbackEl.classList.add('hidden');
+  debugEl.classList.add('hidden');
+}
+
+function addDebugLog(message) {
+  const timestamp = new Date().toLocaleTimeString();
+  const logEntry = `[${timestamp}] ${message}\n`;
+  debugContentEl.textContent += logEntry;
+  debugEl.classList.remove('hidden');
+  console.log(message);
 }
 
 async function submitFeedback(wasHelpful) {
