@@ -111,14 +111,16 @@ async function checkWebsiteStatus() {
     
     // ALWAYS perform real-time check with Pathfinder API
     // This ensures we detect if a previously scouted website has been deleted
+    // Check for the specific URL path, not just the domain
     const checkResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
-        url: tabUrl,
-        checkVectorIndex: true
+        url: tabUrl,  // Check the specific URL path
+        checkVectorIndex: true,
+        checkSpecificPath: true  // Flag to indicate we want path-specific checking
       }),
     });
     
@@ -127,19 +129,19 @@ async function checkWebsiteStatus() {
       addDebugLog(`🌿 Real-time check response: ${JSON.stringify(checkData, null, 2)}`);
       
       if (checkData.exists && checkData.pages && checkData.pages.length > 0) {
-        // Website is currently scouted in database
+        // Specific URL path is currently scouted in database
         currentSiteId = checkData.siteId;
         isScouted = true;
         await savePersistentState();
         
-        addDebugLog('🌿 Website confirmed scouted - showing query interface');
+        addDebugLog('🌿 Specific URL path confirmed scouted - showing query interface');
         hideScoutButton();
         showQueryButton();
         showStatus('Trail already scouted! Ready for your questions.', 'success');
         return;
       } else {
-        // Website not scouted or was deleted from database
-        addDebugLog('🌿 Website not scouted or was deleted - clearing state and showing scout button');
+        // URL path not scouted or was deleted from database
+        addDebugLog('🌿 URL path not scouted or was deleted - clearing state and showing scout button');
         await clearWebsiteState();
         await showScoutButton();
         return;
@@ -313,16 +315,17 @@ async function handleAnalyze() {
     currentDomain = domain;
     addDebugLog(`🌿 Trail base camp: ${domain}`);
     
-    // OPTIMIZED: Check if website already exists (faster than URL check)
-    addDebugLog('🍃 Checking if website already mapped...');
+    // OPTIMIZED: Check if specific URL path already exists (faster than URL check)
+    addDebugLog('🍃 Checking if specific URL path already mapped...');
     const checkResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
-        url: currentUrl,  // API extracts domain internally
-        checkVectorIndex: true  // Check if embeddings exist
+        url: currentUrl,  // Check the specific URL path
+        checkVectorIndex: true,  // Check if embeddings exist
+        checkSpecificPath: true  // Flag to indicate we want path-specific checking
       }),
     });
     
@@ -331,7 +334,7 @@ async function handleAnalyze() {
       addDebugLog(`🌿 Check response: ${JSON.stringify(checkData, null, 2)}`);
       
       if (checkData.exists && checkData.pages && checkData.pages.length > 0) {
-        addDebugLog('🌿 Trail already mapped with waypoints');
+        addDebugLog('🌿 Specific URL path already mapped with waypoints');
         currentSiteId = checkData.siteId;
         isScouted = true;
         await savePersistentState();
@@ -454,8 +457,9 @@ async function handleQuery() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
-        url: currentUrl,
-        checkVectorIndex: true
+        url: currentUrl,  // Check the specific URL path
+        checkVectorIndex: true,
+        checkSpecificPath: true  // Flag to indicate we want path-specific checking
       }),
     });
     
