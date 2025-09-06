@@ -6,6 +6,8 @@ let currentQuestion = '';
 let currentAnswer = null;
 let currentSource = null;
 let currentSiteId = null;
+let currentDomain = null;
+let isScouted = false;
 
 // DOM Elements
 const questionSectionEl = document.getElementById('question-section');
@@ -30,13 +32,126 @@ const debugContentEl = document.getElementById('debug-content');
 const clearLogBtnEl = document.getElementById('clear-log-btn');
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   analyzeBtnEl.addEventListener('click', handleAnalyze);
   queryBtnEl.addEventListener('click', handleQuery);
   clearLogBtnEl.addEventListener('click', clearDebugLog);
   
+  // Load persistent state
+  await loadPersistentState();
+  
+  // Check if current domain is already scouted
+  await checkDomainStatus();
+  
   addDebugLog('Sherpa guide ready - ready to scout trails');
 });
+
+// Load persistent state from storage
+async function loadPersistentState() {
+  try {
+    const result = await chrome.storage.local.get(['sherpaState']);
+    if (result.sherpaState) {
+      const state = result.sherpaState;
+      currentSiteId = state.siteId;
+      currentDomain = state.domain;
+      isScouted = state.isScouted;
+      
+      if (isScouted && currentSiteId) {
+        addDebugLog(`🌿 Restored state for domain: ${currentDomain}`);
+        showQueryButton();
+      }
+    }
+  } catch (error) {
+    addDebugLog(`🍂 Failed to load persistent state: ${error.message}`);
+  }
+}
+
+// Save persistent state to storage
+async function savePersistentState() {
+  try {
+    const state = {
+      siteId: currentSiteId,
+      domain: currentDomain,
+      isScouted: isScouted,
+      timestamp: Date.now()
+    };
+    await chrome.storage.local.set({ sherpaState: state });
+    addDebugLog(`🌿 Saved state for domain: ${currentDomain}`);
+  } catch (error) {
+    addDebugLog(`🍂 Failed to save persistent state: ${error.message}`);
+  }
+}
+
+// Check if current domain is already scouted
+async function checkDomainStatus() {
+  try {
+    // Get current tab URL
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const currentUrl = tab.url;
+    
+    if (!currentUrl || currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) {
+      hideScoutButton();
+      return;
+    }
+    
+    const domain = extractDomain(currentUrl);
+    currentDomain = domain;
+    
+    addDebugLog(`🍃 Checking domain status: ${domain}`);
+    
+    // Check if domain is already scouted
+    const checkResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        url: currentUrl,
+        checkVectorIndex: true
+      }),
+    });
+    
+    if (checkResponse.ok) {
+      const checkData = await checkResponse.json();
+      addDebugLog(`🌿 Domain check response: ${JSON.stringify(checkData, null, 2)}`);
+      
+      if (checkData.exists && checkData.pages && checkData.pages.length > 0) {
+        // Domain is already scouted
+        currentSiteId = checkData.siteId;
+        isScouted = true;
+        await savePersistentState();
+        
+        addDebugLog('🌿 Domain already scouted - hiding scout button');
+        hideScoutButton();
+        showQueryButton();
+        showStatus('Trail already scouted! Ready for your questions.', 'success');
+        return;
+      }
+    }
+    
+    // Domain not scouted - show scout button
+    addDebugLog('🌿 Domain not scouted - showing scout button');
+    showScoutButton();
+    
+  } catch (error) {
+    addDebugLog(`🍂 Domain check failed: ${error.message}`);
+    // On error, show scout button as fallback
+    showScoutButton();
+  }
+}
+
+// Hide scout button and show query section
+function hideScoutButton() {
+  analyzeBtnEl.style.display = 'none';
+  showQueryButton();
+}
+
+// Show scout button
+function showScoutButton() {
+  analyzeBtnEl.style.display = 'block';
+  queryBtnEl.style.display = 'none';
+  questionSectionEl.style.display = 'none';
+}
 
 async function handleAnalyze() {
   try {
@@ -55,6 +170,7 @@ async function handleAnalyze() {
     
     // Extract domain from URL
     const domain = extractDomain(currentUrl);
+    currentDomain = domain;
     addDebugLog(`🌿 Trail base camp: ${domain}`);
     
     // OPTIMIZED: Check if domain already exists (faster than URL check)
@@ -76,9 +192,13 @@ async function handleAnalyze() {
       
       if (checkData.exists && checkData.pages && checkData.pages.length > 0) {
         addDebugLog('🌿 Trail already mapped with waypoints');
-        showStatus('Trail already scouted! Ready for your questions.', 'success');
         currentSiteId = checkData.siteId;
+        isScouted = true;
+        await savePersistentState();
+        
+        hideScoutButton();
         showQueryButton();
+        showStatus('Trail already scouted! Ready for your questions.', 'success');
         return;
       }
     }
@@ -146,8 +266,12 @@ async function handleAnalyze() {
               
               if (data.type === 'done') {
                 addDebugLog('🌿 Trail exploration completed successfully');
-                showStatus('Trail scouted! Ready for your questions.', 'success');
+                isScouted = true;
+                await savePersistentState();
+                
+                hideScoutButton();
                 showQueryButton();
+                showStatus('Trail scouted! Ready for your questions.', 'success');
                 return;
               } else if (data.type === 'status' && data.message.includes('error')) {
                 throw new Error(`Trail exploration error: ${data.message}`);
