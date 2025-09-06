@@ -93,7 +93,22 @@ async function handleAsk() {
     if (!analyzeResponse.ok) {
       const errorText = await analyzeResponse.text();
       console.error('❌ Analyze response error:', errorText);
-      throw new Error(`Analysis failed: HTTP ${analyzeResponse.status} - ${errorText}`);
+      addDebugLog(`❌ Analyze response error: HTTP ${analyzeResponse.status} - ${errorText}`);
+      
+      // Try to parse the error response to get the specific error message
+      let errorMessage = `HTTP ${analyzeResponse.status}`;
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.error_message) {
+          errorMessage = `${errorData.error_code}: ${errorData.error_message}`;
+          addDebugLog(`❌ Parsed analyze error: ${errorMessage}`);
+        }
+      } catch (e) {
+        // If JSON parsing fails, use the raw text
+        errorMessage = `HTTP ${analyzeResponse.status} - ${errorText}`;
+      }
+      
+      throw new Error(`Analysis failed: ${errorMessage}`);
     }
 
     const analyzeData = await analyzeResponse.json();
@@ -142,7 +157,22 @@ async function pollForCompletion() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Job status error:', errorText);
-        throw new Error(`Job status failed: HTTP ${response.status} - ${errorText}`);
+        addDebugLog(`❌ Job status error: HTTP ${response.status} - ${errorText}`);
+        
+        // Try to parse the error response to get the specific error message
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.error_message) {
+            errorMessage = `${errorData.error_code}: ${errorData.error_message}`;
+            addDebugLog(`❌ Parsed job status error: ${errorMessage}`);
+          }
+        } catch (e) {
+          // If JSON parsing fails, use the raw text
+          errorMessage = `HTTP ${response.status} - ${errorText}`;
+        }
+        
+        throw new Error(`Job status failed: ${errorMessage}`);
       }
       
       const data = await response.json();
@@ -228,7 +258,22 @@ async function queryWithQuestion() {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('❌ Query response error:', errorText);
-      throw new Error(`Query failed: HTTP ${response.status} - ${errorText}`);
+      addDebugLog(`❌ Query response error: HTTP ${response.status} - ${errorText}`);
+      
+      // Try to parse the error response to get the specific error message
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.error_message) {
+          errorMessage = `${errorData.error_code}: ${errorData.error_message}`;
+          addDebugLog(`❌ Parsed error: ${errorMessage}`);
+        }
+      } catch (e) {
+        // If JSON parsing fails, use the raw text
+        errorMessage = `HTTP ${response.status} - ${errorText}`;
+      }
+      
+      throw new Error(`Query failed: ${errorMessage}`);
     }
 
     const data = await response.json();
