@@ -22,6 +22,58 @@
       color: #1a1a1a;
     }
     
+    .subtitle {
+      font-size: 12px;
+      color: #6b7280;
+      margin: 4px 0 0 0;
+    }
+    
+    .question-section {
+      margin-bottom: 16px;
+    }
+    
+    .input-group {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .question-input {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    
+    .question-input:focus {
+      border-color: #1a1a1a;
+      box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.1);
+    }
+    
+    .ask-btn {
+      padding: 10px 16px;
+      background: #1a1a1a;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      white-space: nowrap;
+    }
+    
+    .ask-btn:hover {
+      background: #404040;
+    }
+    
+    .ask-btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    
     .status {
       padding: 12px;
       border-radius: 8px;
@@ -52,16 +104,55 @@
       margin-bottom: 12px;
     }
     
-    .result-title {
-      font-weight: 600;
-      margin-bottom: 4px;
-      color: #1a1a1a;
+    .answer-section {
+      margin-bottom: 12px;
+      padding: 12px;
+      background: #f9fafb;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
     }
     
-    .result-url {
-      font-size: 12px;
+    .answer-title {
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #1a1a1a;
+      font-size: 13px;
+    }
+    
+    .answer-text {
+      font-size: 14px;
+      line-height: 1.4;
+      color: #374151;
+    }
+    
+    .source-section {
+      margin-bottom: 12px;
+      padding: 8px;
+      background: #f3f4f6;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+    }
+    
+    .source-title {
+      font-weight: 500;
+      margin-bottom: 4px;
       color: #6b7280;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .source-url {
+      font-size: 12px;
+      color: #1a1a1a;
       word-break: break-all;
+      margin-bottom: 2px;
+    }
+    
+    .source-title-text {
+      font-size: 11px;
+      color: #6b7280;
+      font-style: italic;
     }
     
     .alternative {
@@ -167,6 +258,19 @@
 <body>
   <div class="header">
     <h1>Sherpa</h1>
+    <p class="subtitle">Ask a question about this site</p>
+  </div>
+  
+  <div id="question-section" class="question-section">
+    <div class="input-group">
+      <input 
+        type="text" 
+        id="question-input" 
+        placeholder="e.g., forgot clinic phone number"
+        class="question-input"
+      />
+      <button id="ask-btn" class="ask-btn">Ask</button>
+    </div>
   </div>
   
   <div id="status" class="status hidden">
@@ -174,21 +278,24 @@
   </div>
   
   <div id="result" class="result hidden">
-    <div class="result-title" id="result-title">We took you to:</div>
-    <div class="result-url" id="result-url"></div>
+    <div class="answer-section">
+      <div class="answer-title">Answer:</div>
+      <div class="answer-text" id="answer-text"></div>
+    </div>
     
-    <div id="alternative" class="alternative hidden">
-      <div class="alternative-title" id="alternative-title">Next best:</div>
-      <div class="alternative-url" id="alternative-url"></div>
+    <div class="source-section">
+      <div class="source-title">Source:</div>
+      <div class="source-url" id="source-url"></div>
+      <div class="source-title-text" id="source-title"></div>
     </div>
     
     <div class="buttons">
-      <button id="next-btn" class="btn btn-secondary hidden">Try Next</button>
-      <button id="feedback-btn" class="btn btn-primary">Was this right?</button>
+      <button id="go-to-source-btn" class="btn btn-primary">Go to Source</button>
+      <button id="feedback-btn" class="btn btn-secondary">Was this helpful?</button>
     </div>
     
     <div class="feedback hidden" id="feedback">
-      <div class="feedback-text">Was this the right page?</div>
+      <div class="feedback-text">Was this answer helpful?</div>
       <div class="feedback-buttons">
         <button id="yes-btn" class="feedback-btn">✅ Yes</button>
         <button id="no-btn" class="feedback-btn">❌ No</button>
