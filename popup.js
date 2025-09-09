@@ -91,6 +91,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Add Enter key support
   questionInputEl.addEventListener('keypress', handleEnterKey);
   
+  // Add spacebar support for voice input
+  document.addEventListener('keydown', handleSpaceKey);
+  
   // Add click support for source URL
   sourceUrlEl.addEventListener('click', handleSourceClick);
   
@@ -380,6 +383,20 @@ function handleEnterKey(event) {
       // Query button is visible and enabled - trigger query
       addDebugLog('⌨️ Enter key pressed - triggering ask question');
       handleQuery();
+    }
+  }
+}
+
+// Handle Space key press for voice input
+function handleSpaceKey(event) {
+  if (event.code === 'Space') {
+    // Only trigger voice input if we're in query mode and voice is supported
+    if (isScouted && !queryBtnEl.classList.contains('hidden') && isVoiceSupported) {
+      // Prevent default space behavior (scrolling)
+      event.preventDefault();
+      
+      addDebugLog('⌨️ Space key pressed - triggering voice input');
+      handleVoiceInput();
     }
   }
 }
@@ -685,6 +702,25 @@ function showError(message) {
 // Hide error with smooth animation
 function hideError() {
   errorEl.classList.add('hidden');
+}
+
+// Clear display for new query
+function clearDisplayForNewQuery() {
+  addDebugLog('🌿 Clearing display for new query');
+  
+  // Clear the question input
+  if (questionInputEl) {
+    questionInputEl.value = '';
+  }
+  
+  // Hide result section
+  if (resultEl) {
+    resultEl.classList.add('hidden');
+  }
+  
+  // Reset current answer and source
+  currentAnswer = null;
+  currentSource = null;
 }
 
 async function handleAnalyze() {
@@ -1298,6 +1334,9 @@ function handleVoiceInput() {
     // Stop listening
     stopVoiceRecognition();
   } else {
+    // Clear the display and reset for new query
+    clearDisplayForNewQuery();
+    
     // Check microphone permission before starting
     if (microphonePermissionGranted) {
       startVoiceRecognition();
