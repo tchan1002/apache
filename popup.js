@@ -971,12 +971,10 @@ async function handleQuery() {
     }
     
     addDebugLog(`🐦 Asking Sherpa: "${question}"`);
-    showStatus('Consulting Sherpa...', 'working');
     
     // OPTIMIZED: Try Pathfinder's native fast endpoints first
     try {
       addDebugLog('🌿 Step 1: Using Pathfinder native search...');
-      showStatus('Searching with Pathfinder...', 'working');
       
       // Try Pathfinder's native search endpoint (likely fastest)
       const searchResponse = await fetch(`${PATHFINDER_API_BASE}/search`, {
@@ -1337,6 +1335,9 @@ function handleVoiceInput() {
     // Clear the display and reset for new query
     clearDisplayForNewQuery();
     
+    // Show immediate status message to eliminate visual delay
+    showStatus('Preparing voice input...', 'working');
+    
     // Check microphone permission before starting
     if (microphonePermissionGranted) {
       startVoiceRecognition();
@@ -1359,7 +1360,7 @@ function startVoiceRecognition() {
     addDebugLog('🎤 Starting voice recognition...');
     isListening = true;
     updateVoiceButtonState('listening');
-    showStatus('Listening... Speak your question', 'working');
+    showStatus('Sherpa\'s listening...', 'working');
     
     recognition.start();
   } catch (error) {
@@ -1389,17 +1390,20 @@ function handleVoiceResult(event) {
   
   // Update voice button state
   updateVoiceButtonState('processing');
-  showStatus('Processing your question...', 'working');
+  showStatus('Consulting the mountain spirits...', 'working');
   
   // Small delay to show processing state, then trigger query
   setTimeout(() => {
     updateVoiceButtonState('default');
-    hideStatus();
     
     // Auto-trigger query if we're in the right state
     if (isScouted && !queryBtnEl.classList.contains('hidden') && !queryBtnEl.disabled) {
       addDebugLog('🎤 Auto-triggering query from voice input');
+      // Show the next status message immediately to eliminate gap
+      showStatus('Searching with Pathfinder...', 'working');
       handleQuery();
+    } else {
+      hideStatus();
     }
   }, 1000);
 }
