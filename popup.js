@@ -12,6 +12,13 @@ let isScouted = false;
 let isScouting = false; // Track if scouting is in progress
 let mountaineeringUpdateInterval = null;
 
+// Voice recognition state
+let recognition = null;
+let isListening = false;
+let isVoiceSupported = false;
+let microphonePermissionGranted = false;
+// Removed permissionIframe - using direct permission requests
+
 // Performance tracking
 const performanceMetrics = {
   pageCheckTimes: [],
@@ -50,6 +57,7 @@ const questionSectionEl = document.getElementById('question-section');
 const questionInputEl = document.getElementById('question-input');
 const analyzeBtnEl = document.getElementById('analyze-btn');
 const queryBtnEl = document.getElementById('query-btn');
+const voiceBtnEl = document.getElementById('voice-btn');
 const statusEl = document.getElementById('status');
 const statusTextEl = document.getElementById('status-text');
 const resultEl = document.getElementById('result');
@@ -68,13 +76,16 @@ const debugHeaderEl = document.getElementById('debug-header');
 const debugContentEl = document.getElementById('debug-content');
 const copyLogBtnEl = document.getElementById('copy-log-btn');
 const clearLogBtnEl = document.getElementById('clear-log-btn');
+const testMicBtnEl = document.getElementById('test-mic-btn');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
   analyzeBtnEl.addEventListener('click', handleAnalyze);
   queryBtnEl.addEventListener('click', handleQuery);
+  voiceBtnEl.addEventListener('click', handleVoiceInput);
   copyLogBtnEl.addEventListener('click', copyDebugLog);
   clearLogBtnEl.addEventListener('click', clearDebugLog);
+  testMicBtnEl.addEventListener('click', testMicrophonePermission);
   debugHeaderEl.addEventListener('click', toggleDebugLog);
   
   // Add Enter key support
@@ -82,6 +93,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Add click support for source URL
   sourceUrlEl.addEventListener('click', handleSourceClick);
+  
+  // Initialize voice recognition
+  initializeVoiceRecognition();
   
   // Load persistent state
   await loadPersistentState();
@@ -410,6 +424,9 @@ async function showScoutButton() {
   resultEl.classList.add('hidden');
   errorEl.classList.add('hidden');
   
+  // Update voice button visibility (will hide it since no entry field)
+  updateVoiceButtonVisibility();
+  
   // Hide loading message and show scout button
   hideStatus();
   
@@ -433,16 +450,18 @@ function showQueryButton() {
   
   addDebugLog('🌿 Showing query section with animation');
   
-  // Ensure both elements are hidden first
-  queryBtnEl.classList.add('hidden');
-  questionInputEl.classList.add('hidden');
+  // Show query interface
+  queryBtnEl.classList.remove('hidden');
+  questionInputEl.classList.remove('hidden');
+  questionSectionEl.classList.remove('hidden');
   
-  // Show query button and input section together
-  setTimeout(() => {
-    queryBtnEl.classList.remove('hidden');
-    questionInputEl.classList.remove('hidden');
-    questionSectionEl.classList.remove('hidden');
-  }, 200);
+  // Update voice button visibility based on simple rule
+  updateVoiceButtonVisibility();
+  
+  // Request microphone permission if needed
+  if (isVoiceSupported && !microphonePermissionGranted) {
+    requestMicrophonePermission();
+  }
 }
 
 // Show status with smooth animation
@@ -688,6 +707,9 @@ async function handleAnalyze() {
     questionInputEl.classList.add('hidden');
     queryBtnEl.classList.add('hidden');
     
+    // Update voice button visibility (will hide it since no entry field)
+    updateVoiceButtonVisibility();
+    
     addDebugLog('🌲 Starting trail reconnaissance...');
     showStatus('Scouting the trail...', 'working');
     
@@ -777,9 +799,12 @@ async function handleAnalyze() {
     // Reduce log verbosity during heavy crawling activity
     reduceLogVerbosity();
     
-    // Hide question input during scouting
+    // Hide input during scouting
     questionInputEl.classList.add('hidden');
     queryBtnEl.classList.add('hidden');
+    
+    // Update voice button visibility (will hide it since no entry field)
+    updateVoiceButtonVisibility();
     
     // Start mountaineering status updates after 5 seconds
     const statusUpdateInterval = setTimeout(() => {
@@ -1081,6 +1106,338 @@ function extractDomain(url) {
   } catch {
     return url;
   }
+}
+
+// Voice Recognition Functions
+function initializeVoiceRecognition() {
+  addDebugLog('🎤 Initializing voice recognition...');
+  addDebugLog(`🎤 Browser: ${navigator.userAgent}`);
+  addDebugLog(`🎤 SpeechRecognition available: ${'SpeechRecognition' in window}`);
+  addDebugLog(`🎤 webkitSpeechRecognition available: ${'webkitSpeechRecognition' in window}`);
+  
+  // Check if browser supports speech recognition
+  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    isVoiceSupported = true;
+    addDebugLog('🎤 Voice recognition supported');
+    
+    try {
+      // Initialize speech recognition
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      
+      // Configure recognition settings
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+      
+      // Set up event handlers
+      recognition.onstart = handleVoiceStart;
+      recognition.onresult = handleVoiceResult;
+      recognition.onerror = handleVoiceError;
+      recognition.onend = handleVoiceEnd;
+      
+      addDebugLog('🎤 Voice recognition initialized successfully');
+    } catch (error) {
+      addDebugLog(`🍂 Voice recognition initialization failed: ${error.message}`);
+      isVoiceSupported = false;
+    }
+  } else {
+    isVoiceSupported = false;
+    addDebugLog('🍂 Voice recognition not supported in this browser');
+  }
+  
+  // Voice button should be hidden by default (only shown in query mode)
+  if (voiceBtnEl) {
+    voiceBtnEl.style.display = 'none';
+    addDebugLog('🎤 Voice button hidden by default');
+    addDebugLog(`🎤 Voice button element: ${voiceBtnEl}`);
+    addDebugLog(`🎤 Voice button parent: ${voiceBtnEl.parentElement}`);
+  } else {
+    addDebugLog('🍂 CRITICAL: voiceBtnEl is null! Voice button not found in DOM');
+  }
+}
+
+// Note: Removed iframe and new tab methods - now using direct permission requests
+
+// Simple rule: microphone only shows when there's an entry field AND microphone is working
+function updateVoiceButtonVisibility() {
+  if (!voiceBtnEl) return;
+  
+  const hasEntryField = questionInputEl && !questionInputEl.classList.contains('hidden');
+  const micEnabled = isVoiceSupported && microphonePermissionGranted;
+  
+  if (hasEntryField && micEnabled) {
+    voiceBtnEl.style.display = 'flex';
+    voiceBtnEl.classList.remove('hidden');
+  } else {
+    voiceBtnEl.style.display = 'none';
+    voiceBtnEl.classList.add('hidden');
+  }
+}
+
+// Request microphone permission directly in popup context
+async function requestMicrophonePermission() {
+  addDebugLog('🎤 Starting microphone permission request...');
+  
+  // Don't request permission if we're in scout mode
+  if (analyzeBtnEl.classList.contains('hidden') && queryBtnEl.classList.contains('hidden')) {
+    addDebugLog('🍂 In scout mode - skipping microphone permission request');
+    return;
+  }
+  
+  if (!isVoiceSupported) {
+    addDebugLog('🍂 Skipping microphone permission request - voice not supported');
+    return;
+  }
+
+  // Check if permission is already granted
+  if (microphonePermissionGranted) {
+    addDebugLog('🎤 Microphone permission already granted - skipping request');
+    updateVoiceButtonState('ready');
+    showStatus('Microphone already ready for voice input!', 'success');
+    setTimeout(() => hideStatus(), 2000);
+    return;
+  }
+
+  // Request microphone permission directly in popup context
+  try {
+    addDebugLog('🎤 Requesting microphone permission directly...');
+    
+    // Show loading state
+    updateVoiceButtonState('processing');
+    showStatus('Requesting microphone access...', 'working');
+    
+    // Request microphone access directly
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    
+    addDebugLog('🎤 Microphone permission granted!');
+    
+    // Test the stream to make sure it works
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    source.connect(analyser);
+    
+    // Check if we can read audio data
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    analyser.getByteFrequencyData(dataArray);
+    
+    // Stop the tracks to prevent the recording indicator from being shown
+    stream.getTracks().forEach(function (track) {
+      track.stop();
+    });
+    
+    // Clean up audio context
+    audioContext.close();
+    
+    // Update state
+    microphonePermissionGranted = true;
+    updateVoiceButtonState('ready');
+    showStatus('Microphone ready for voice input!', 'success');
+    
+    // Update voice button visibility based on simple rule
+    updateVoiceButtonVisibility();
+    
+    // Hide success message after 2 seconds
+    setTimeout(() => {
+      hideStatus();
+    }, 2000);
+    
+  } catch (error) {
+    addDebugLog(`🍂 Microphone permission denied: ${error.name}`);
+    microphonePermissionGranted = false;
+    
+    // Only show error if we're in query mode
+    if (!analyzeBtnEl.classList.contains('hidden') || !queryBtnEl.classList.contains('hidden')) {
+      if (error.name === 'NotAllowedError') {
+        showError('Microphone access denied. Please allow microphone access in your browser settings to use voice input.');
+      } else if (error.name === 'NotFoundError') {
+        showError('No microphone found. Please connect a microphone to use voice input.');
+      } else {
+        showError(`Microphone error: ${error.message}`);
+      }
+      
+      // Hide voice button if permission denied
+      if (voiceBtnEl) {
+        voiceBtnEl.style.display = 'none';
+      }
+    }
+    
+    updateVoiceButtonState('error');
+    updateVoiceButtonVisibility();
+  }
+}
+
+function handleVoiceInput() {
+  if (!isVoiceSupported) {
+    showError('Voice input not supported in this browser');
+    return;
+  }
+  
+  if (isListening) {
+    // Stop listening
+    stopVoiceRecognition();
+  } else {
+    // Check microphone permission before starting
+    if (microphonePermissionGranted) {
+      startVoiceRecognition();
+    } else {
+      addDebugLog('🎤 Permission not granted, requesting via iframe...');
+      showStatus('Requesting microphone permission...', 'working');
+      requestMicrophonePermission();
+    }
+  }
+}
+
+async function checkMicrophonePermission() {
+  // For iframe method, we track permission state directly
+  addDebugLog(`🎤 Checking microphone permission: ${microphonePermissionGranted}`);
+  return microphonePermissionGranted;
+}
+
+function startVoiceRecognition() {
+  try {
+    addDebugLog('🎤 Starting voice recognition...');
+    isListening = true;
+    updateVoiceButtonState('listening');
+    showStatus('Listening... Speak your question', 'working');
+    
+    recognition.start();
+  } catch (error) {
+    addDebugLog(`🍂 Voice recognition start error: ${error.message}`);
+    handleVoiceError({ error: 'start_failed' });
+  }
+}
+
+function stopVoiceRecognition() {
+  if (recognition && isListening) {
+    addDebugLog('🎤 Stopping voice recognition...');
+    recognition.stop();
+  }
+}
+
+function handleVoiceStart() {
+  addDebugLog('🎤 Voice recognition started - listening for speech');
+  updateVoiceButtonState('listening');
+}
+
+function handleVoiceResult(event) {
+  const transcript = event.results[0][0].transcript;
+  addDebugLog(`🎤 Voice input received: "${transcript}"`);
+  
+  // Update the input field with the transcript
+  questionInputEl.value = transcript;
+  
+  // Update voice button state
+  updateVoiceButtonState('processing');
+  showStatus('Processing your question...', 'working');
+  
+  // Small delay to show processing state, then trigger query
+  setTimeout(() => {
+    updateVoiceButtonState('default');
+    hideStatus();
+    
+    // Auto-trigger query if we're in the right state
+    if (isScouted && !queryBtnEl.classList.contains('hidden') && !queryBtnEl.disabled) {
+      addDebugLog('🎤 Auto-triggering query from voice input');
+      handleQuery();
+    }
+  }, 1000);
+}
+
+function handleVoiceError(event) {
+  addDebugLog(`🍂 Voice recognition error: ${event.error}`);
+  
+  let errorMessage = 'Voice input failed';
+  
+  switch (event.error) {
+    case 'no-speech':
+      errorMessage = 'No speech detected. Please try again.';
+      break;
+    case 'audio-capture':
+      errorMessage = 'Microphone not available. Please check permissions.';
+      break;
+    case 'not-allowed':
+      errorMessage = 'Microphone permission denied. Please allow microphone access.';
+      break;
+    case 'network':
+      errorMessage = 'Network error. Please check your connection.';
+      break;
+    case 'start_failed':
+      errorMessage = 'Failed to start voice recognition. Please try again.';
+      break;
+    default:
+      errorMessage = `Voice input error: ${event.error}`;
+  }
+  
+  updateVoiceButtonState('error');
+  showError(errorMessage);
+  
+  // Reset button state after error
+  setTimeout(() => {
+    updateVoiceButtonState('default');
+  }, 3000);
+}
+
+function handleVoiceEnd() {
+  addDebugLog('🎤 Voice recognition ended');
+  isListening = false;
+  updateVoiceButtonState('default');
+}
+
+function updateVoiceButtonState(state) {
+  if (!voiceBtnEl) {
+    addDebugLog('🍂 updateVoiceButtonState: voiceBtnEl is null');
+    return;
+  }
+  
+  // Remove all state classes
+  voiceBtnEl.classList.remove('listening', 'processing', 'error', 'ready');
+  
+  // Add the new state class
+  if (state !== 'default') {
+    voiceBtnEl.classList.add(state);
+  }
+  
+  // Update button disabled state
+  voiceBtnEl.disabled = state === 'processing';
+  
+  // Update icon based on state
+  const icon = voiceBtnEl.querySelector('.voice-icon');
+  if (icon) {
+    switch (state) {
+      case 'listening':
+        icon.textContent = '●';
+        break;
+      case 'processing':
+        icon.textContent = '◐';
+        break;
+      case 'error':
+        icon.textContent = '▲';
+        break;
+      case 'ready':
+        icon.textContent = '●';
+        break;
+      default:
+        icon.textContent = '○';
+    }
+  } else {
+    addDebugLog('🍂 updateVoiceButtonState: voice-icon not found');
+  }
+}
+
+
+// Test microphone permission function
+function testMicrophonePermission() {
+  addDebugLog('TEST: Manual microphone permission test');
+  addDebugLog(`Voice button exists: ${!!voiceBtnEl}`);
+  addDebugLog(`Voice supported: ${isVoiceSupported}`);
+  addDebugLog(`Permission granted: ${microphonePermissionGranted}`);
+  addDebugLog(`Method: Using new tab for microphone permission`);
+  
+  // Try to request permission
+  requestMicrophonePermission();
 }
 
 function addDebugLog(message) {

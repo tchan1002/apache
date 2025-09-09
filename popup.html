@@ -45,8 +45,14 @@
       margin-bottom: 12px;
     }
     
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
     .question-input {
-      width: 100%;
+      flex: 1;
       padding: 10px 12px;
       border: 1px solid #d1d5db;
       border-radius: 8px;
@@ -54,6 +60,75 @@
       outline: none;
       transition: border-color 0.2s;
       box-sizing: border-box;
+    }
+    
+    .voice-btn {
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: #6b7280;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+    
+    .voice-btn:hover:not(:disabled) {
+      background: transparent;
+      color: #374151;
+      transform: scale(1.05);
+    }
+    
+    .voice-btn:active {
+      transform: scale(0.95);
+    }
+    
+    .voice-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .voice-btn.listening {
+      background: transparent;
+      color: #dc2626;
+      animation: pulse 1.5s infinite;
+    }
+    
+    .voice-btn.processing {
+      background: transparent;
+      color: #2563eb;
+      animation: spin 1s linear infinite;
+    }
+    
+    .voice-btn.error {
+      background: transparent;
+      color: #dc2626;
+    }
+    
+    .voice-btn.ready {
+      background: transparent;
+      color: #16a34a;
+    }
+    
+    .voice-icon {
+      font-size: 24px;
+      line-height: 1;
+      font-weight: bold;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
     
     .question-input:focus {
@@ -455,12 +530,22 @@
         <button id="analyze-btn" class="analyze-btn hidden">Scout the Trail</button>
     
     <div class="input-group">
-      <input 
-        type="text" 
-        id="question-input" 
-        placeholder="e.g, where's the summit register?"
-        class="question-input hidden"
-      />
+      <div class="input-row">
+        <input 
+          type="text" 
+          id="question-input" 
+          placeholder="e.g, where's the summit register?"
+          class="question-input hidden"
+        />
+        <button 
+          id="voice-btn" 
+          class="voice-btn hidden" 
+          title="Click to speak your question"
+          aria-label="Voice input"
+        >
+          <span class="voice-icon">○</span>
+        </button>
+      </div>
     </div>
     
     <button id="query-btn" class="query-btn hidden">Ask Sherpa</button>
@@ -504,10 +589,11 @@
   <div id="debug" class="debug">
     <div class="debug-header" id="debug-header">
       🌿 Trail Log
-      <div class="debug-buttons">
-        <button id="copy-log-btn" class="copy-log-btn">📋 Copy</button>
-        <button id="clear-log-btn" class="clear-log-btn">Clear</button>
-      </div>
+    <div class="debug-buttons">
+      <button id="copy-log-btn" class="copy-log-btn">📋 Copy</button>
+      <button id="clear-log-btn" class="clear-log-btn">Clear</button>
+        <button id="test-mic-btn" class="copy-log-btn">Test Mic</button>
+    </div>
     </div>
     <div id="debug-content" class="debug-content hidden"></div>
   </div>

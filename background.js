@@ -17,4 +17,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true; // Keep message channel open for async response
   }
+  
+  // Handle microphone permission messages from permission page
+  if (request.type === 'MICROPHONE_PERMISSION_GRANTED' || 
+      request.type === 'MICROPHONE_PERMISSION_DENIED' || 
+      request.type === 'CLOSE_IFRAME') {
+    
+    console.log('🎤 Background received permission message:', request.type);
+    
+    // Forward the message to the popup
+    chrome.runtime.sendMessage(request);
+    
+    // Close the permission tab if it's a close request
+    if (request.type === 'CLOSE_IFRAME' && sender.tab) {
+      chrome.tabs.remove(sender.tab.id);
+    }
+  }
 });
