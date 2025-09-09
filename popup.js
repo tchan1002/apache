@@ -157,8 +157,9 @@ async function checkWebsiteStatus() {
     
     addDebugLog(`Checking cached state for: ${currentUrl}`);
     
-    // Show loading status
+    // Show loading status with cycling mountaineering messages
     showStatus('Checking if we\'ve been here before...', 'working');
+    startMountaineeringCheckUpdates();
     
     // Load cached state
     const result = await chrome.storage.local.get(['sherpaState']);
@@ -170,6 +171,7 @@ async function checkWebsiteStatus() {
       addDebugLog(`Found cached state for: ${currentUrl} - showing query interface`);
       currentSiteId = result.sherpaState.siteId;
       isScouted = true;
+      stopMountaineeringUpdates(); // Stop the cycling check messages
       hideStatus();
       showQueryButton();
       return;
@@ -177,11 +179,13 @@ async function checkWebsiteStatus() {
     
     // No cached state or different URL - show scout button
     addDebugLog(`No cached state found for: ${currentUrl} - showing scout button`);
+    stopMountaineeringUpdates(); // Stop the cycling check messages
     hideStatus();
     showScoutButton();
     
   } catch (error) {
     addDebugLog(`Website check failed: ${error.message}`);
+    stopMountaineeringUpdates(); // Stop the cycling check messages
     showError('Failed to check website status');
     hideStatus();
     showScoutButton();
@@ -252,6 +256,30 @@ async function clearWebsiteState() {
   await clearPersistentState();
 }
 
+// Mountaineering options for "Checking if we've been here before"
+const mountaineeringCheckMessages = [
+  'Checking if we\'ve been here before...',
+  'Consulting the trail register...',
+  'Looking for familiar landmarks...',
+  'Checking our route history...',
+  'Scanning for previous waypoints...',
+  'Reviewing the expedition log...',
+  'Checking the summit register...',
+  'Looking for our trail markers...',
+  'Consulting the climbing journal...',
+  'Checking for previous ascents...',
+  'Reviewing the route beta...',
+  'Looking for familiar terrain...',
+  'Checking the guidebook notes...',
+  'Scanning for known paths...',
+  'Consulting the mountain lore...',
+  'Checking our climbing history...',
+  'Looking for previous campsites...',
+  'Reviewing the approach notes...',
+  'Checking the descent route...',
+  'Consulting the peak register...'
+];
+
 // Start mountaineering status updates during exploration
 function startMountaineeringUpdates() {
   const mountaineeringMessages = [
@@ -301,6 +329,23 @@ function stopMountaineeringUpdates() {
   }
 }
 
+// Start mountaineering check status updates
+function startMountaineeringCheckUpdates() {
+  let messageIndex = 0;
+  
+  mountaineeringUpdateInterval = setInterval(() => {
+    if (messageIndex < mountaineeringCheckMessages.length) {
+      const message = mountaineeringCheckMessages[messageIndex];
+      showStatus(message, 'working');
+      addDebugLog(`🏔️ Check update: ${message}`);
+      messageIndex++;
+    } else {
+      // Cycle through messages again
+      messageIndex = 0;
+    }
+  }, 2000); // Update every 2 seconds for check messages
+}
+
 // Handle Enter key press
 function handleEnterKey(event) {
   if (event.key === 'Enter') {
@@ -317,8 +362,8 @@ function handleEnterKey(event) {
       // Scout button is visible and enabled - trigger scouting
       addDebugLog('⌨️ Enter key pressed - triggering scout trail');
       handleAnalyze();
-    } else if (isScouted && !questionInputEl.classList.contains('hidden')) {
-      // Question input is visible and site is scouted - trigger query
+    } else if (isScouted && !queryBtnEl.classList.contains('hidden') && !queryBtnEl.disabled) {
+      // Query button is visible and enabled - trigger query
       addDebugLog('⌨️ Enter key pressed - triggering ask question');
       handleQuery();
     }
@@ -380,6 +425,12 @@ async function showScoutButton() {
 
 // Show query button and input with smooth animation
 function showQueryButton() {
+  // Don't show query interface if scouting is in progress
+  if (isScouting) {
+    addDebugLog('🌿 Not showing query interface - scouting in progress');
+    return;
+  }
+  
   addDebugLog('🌿 Showing query section with animation');
   
   // Ensure both elements are hidden first
@@ -687,8 +738,9 @@ async function handleAnalyze() {
         
         await savePersistentState();
         
+        // Show success message and query interface (like normal completion)
         hideScoutButton();
-        // Don't show "already scouted" message - just show query interface
+        showStatus('Trail scouted! Ready for your questions.', 'success');
         return;
       }
     }
@@ -1097,7 +1149,7 @@ async function copyDebugLog() {
     
     setTimeout(() => {
       copyLogBtnEl.textContent = originalText;
-      copyLogBtnEl.style.background = '#3b82f6';
+      copyLogBtnEl.style.background = '#1a1a1a'; // Always return to black background
     }, 1500);
     
   } catch (error) {
