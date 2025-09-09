@@ -13,6 +13,7 @@
     .header {
       text-align: center;
       margin-bottom: 16px;
+      position: relative;
     }
     
     .header h1 {
@@ -26,6 +27,54 @@
       font-size: 12px;
       color: #6b7280;
       margin: 4px 0 0 0;
+    }
+    
+    .log-toggle-btn {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 50%;
+      background: #f3f4f6;
+      color: #6b7280;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+      font-size: 16px;
+      font-weight: bold;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    
+    .log-toggle-btn:hover {
+      background: #e5e7eb;
+      color: #374151;
+      transform: scale(1.1);
+    }
+    
+    .log-toggle-btn:active {
+      transform: scale(0.95);
+    }
+    
+    .log-toggle-btn.hidden {
+      background: #dc2626;
+      color: white;
+    }
+    
+    .log-toggle-btn.hidden:hover {
+      background: #b91c1c;
+    }
+    
+    .log-toggle-icon {
+      line-height: 1;
+      transition: transform 0.3s ease;
+    }
+    
+    .log-toggle-btn.hidden .log-toggle-icon {
+      transform: rotate(180deg);
     }
     
     .question-section {
@@ -447,6 +496,19 @@
       border: 1px solid #e5e7eb;
       border-radius: 6px;
       font-size: 11px;
+      transition: all 0.3s ease-in-out;
+      opacity: 1;
+      transform: translateY(0);
+    }
+    
+    .debug.completely-hidden {
+      opacity: 0;
+      transform: translateY(-10px);
+      pointer-events: none;
+      margin-top: 0;
+      padding: 0;
+      height: 0;
+      overflow: hidden;
     }
     
     .debug-header {
@@ -549,6 +611,9 @@
   <div class="header">
     <h1>Sherpa</h1>
     <p class="subtitle">Scout ahead and ask Sherpa</p>
+    <button id="log-toggle-btn" class="log-toggle-btn" title="Toggle Trail Log">
+      <span class="log-toggle-icon">−</span>
+    </button>
   </div>
   
   <div id="question-section" class="question-section">

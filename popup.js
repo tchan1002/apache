@@ -77,6 +77,7 @@ const debugContentEl = document.getElementById('debug-content');
 const copyLogBtnEl = document.getElementById('copy-log-btn');
 const clearLogBtnEl = document.getElementById('clear-log-btn');
 const testMicBtnEl = document.getElementById('test-mic-btn');
+const logToggleBtnEl = document.getElementById('log-toggle-btn');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -87,6 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   clearLogBtnEl.addEventListener('click', clearDebugLog);
   testMicBtnEl.addEventListener('click', testMicrophonePermission);
   debugHeaderEl.addEventListener('click', toggleDebugLog);
+  logToggleBtnEl.addEventListener('click', toggleLogVisibility);
   
   // Add Enter key support
   questionInputEl.addEventListener('keypress', handleEnterKey);
@@ -390,13 +392,15 @@ function handleEnterKey(event) {
 // Handle Space key press for voice input
 function handleSpaceKey(event) {
   if (event.code === 'Space') {
-    // Only trigger voice input if we're in query mode and voice is supported
-    if (isScouted && !queryBtnEl.classList.contains('hidden') && isVoiceSupported) {
+    // Only trigger voice input if we're in query mode, voice is supported, AND voice button is visible
+    if (isScouted && !queryBtnEl.classList.contains('hidden') && isVoiceSupported && isVoiceButtonVisible()) {
       // Prevent default space behavior (scrolling)
       event.preventDefault();
       
       addDebugLog('⌨️ Space key pressed - triggering voice input');
       handleVoiceInput();
+    } else {
+      addDebugLog('⌨️ Space key pressed but voice input not available (scouted: ' + isScouted + ', query visible: ' + !queryBtnEl.classList.contains('hidden') + ', voice supported: ' + isVoiceSupported + ', voice button visible: ' + isVoiceButtonVisible() + ')');
     }
   }
 }
@@ -478,6 +482,13 @@ function showQueryButton() {
   // Request microphone permission if needed
   if (isVoiceSupported && !microphonePermissionGranted) {
     requestMicrophonePermission();
+  } else if (isVoiceSupported && microphonePermissionGranted) {
+    // Microphone is already ready, ensure voice button is shown
+    addDebugLog('🎤 Microphone already ready - ensuring voice button is visible in query mode');
+    if (voiceBtnEl) {
+      voiceBtnEl.style.display = 'flex';
+      voiceBtnEl.classList.remove('hidden');
+    }
   }
 }
 
@@ -511,6 +522,22 @@ function hideStatus() {
 function toggleDebugLog() {
   debugContentEl.classList.toggle('hidden');
   addDebugLog('🌿 Trail log toggled');
+}
+
+// Toggle complete log visibility (hide/show the entire debug section)
+function toggleLogVisibility() {
+  debugEl.classList.toggle('completely-hidden');
+  logToggleBtnEl.classList.toggle('hidden');
+  
+  // Update the icon
+  const icon = logToggleBtnEl.querySelector('.log-toggle-icon');
+  if (debugEl.classList.contains('completely-hidden')) {
+    icon.textContent = '+';
+    addDebugLog('🌿 Trail log completely hidden');
+  } else {
+    icon.textContent = '−';
+    addDebugLog('🌿 Trail log shown');
+  }
 }
 
 // Set up tab change listener for persistent window
@@ -1216,16 +1243,35 @@ function smoothHide(element) {
 
 // Simple rule: microphone only shows when there's an entry field AND microphone is working
 function updateVoiceButtonVisibility() {
-  if (!voiceBtnEl) return;
+  if (!voiceBtnEl) {
+    addDebugLog('🍂 updateVoiceButtonVisibility: voiceBtnEl is null');
+    return;
+  }
   
   const hasEntryField = questionInputEl && !questionInputEl.classList.contains('hidden');
   const micEnabled = isVoiceSupported && microphonePermissionGranted;
   
+  addDebugLog(`🎤 Voice button visibility check: hasEntryField=${hasEntryField}, micEnabled=${micEnabled}, isVoiceSupported=${isVoiceSupported}, microphonePermissionGranted=${microphonePermissionGranted}`);
+  
   if (hasEntryField && micEnabled) {
+    addDebugLog('🎤 Showing voice button - conditions met');
     smoothShow(voiceBtnEl);
   } else {
+    addDebugLog('🎤 Hiding voice button - conditions not met');
     smoothHide(voiceBtnEl);
   }
+}
+
+// Check if voice button is visible and ready for input
+function isVoiceButtonVisible() {
+  if (!voiceBtnEl) return false;
+  
+  // Check if voice button is not hidden and is displayed
+  const isNotHidden = !voiceBtnEl.classList.contains('hidden');
+  const isDisplayed = window.getComputedStyle(voiceBtnEl).display !== 'none';
+  const isInInputRow = voiceBtnEl.closest('.input-row') !== null;
+  
+  return isNotHidden && isDisplayed && isInInputRow;
 }
 
 // Request microphone permission directly in popup context
@@ -1248,6 +1294,21 @@ async function requestMicrophonePermission() {
     addDebugLog('🎤 Microphone permission already granted - skipping request');
     updateVoiceButtonState('ready');
     showStatus('Microphone already ready for voice input!', 'success');
+    
+    // Ensure voice button is shown if conditions are met
+    updateVoiceButtonVisibility();
+    if (isVoiceSupported && microphonePermissionGranted) {
+      const hasEntryField = questionInputEl && !questionInputEl.classList.contains('hidden');
+      if (hasEntryField) {
+        addDebugLog('🎤 Microphone already ready - ensuring voice button is visible');
+        // Force show the voice button
+        if (voiceBtnEl) {
+          voiceBtnEl.style.display = 'flex';
+          voiceBtnEl.classList.remove('hidden');
+        }
+      }
+    }
+    
     setTimeout(() => hideStatus(), 2000);
     return;
   }
@@ -1291,6 +1352,19 @@ async function requestMicrophonePermission() {
     
     // Update voice button visibility based on simple rule
     updateVoiceButtonVisibility();
+    
+    // Ensure voice button is shown if conditions are met
+    if (isVoiceSupported && microphonePermissionGranted) {
+      const hasEntryField = questionInputEl && !questionInputEl.classList.contains('hidden');
+      if (hasEntryField) {
+        addDebugLog('🎤 Microphone ready - ensuring voice button is visible');
+        // Force show the voice button
+        if (voiceBtnEl) {
+          voiceBtnEl.style.display = 'flex';
+          voiceBtnEl.classList.remove('hidden');
+        }
+      }
+    }
     
     // Hide success message after 2 seconds
     setTimeout(() => {
