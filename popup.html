@@ -103,6 +103,7 @@
     
     .query-btn {
       background: #10b981;
+      margin-bottom: 0;
     }
     
     .query-btn:hover:not(:disabled) {
@@ -118,6 +119,12 @@
       transition: all 0.3s ease-in-out;
       opacity: 1;
       transform: translateY(0);
+    }
+    
+    .status.fade-out {
+      opacity: 0;
+      transform: translateY(-10px);
+      pointer-events: none;
     }
     
     .status.hidden {
@@ -149,6 +156,7 @@
     }
     
     .result {
+      margin-top: 12px;
       margin-bottom: 12px;
       transition: all 0.3s ease-in-out;
       opacity: 1;
@@ -207,6 +215,18 @@
       color: #1a1a1a;
       word-break: break-all;
       margin-bottom: 2px;
+      text-decoration: underline;
+      cursor: pointer;
+      display: block;
+    }
+    
+    .source-url:hover {
+      color: #404040;
+      text-decoration: underline;
+    }
+    
+    .source-url:visited {
+      color: #1a1a1a;
     }
     
     .source-title-text {
@@ -400,11 +420,6 @@
       user-select: none;
     }
     
-    .debug-header:hover {
-      background: #e5e7eb;
-      border-radius: 4px;
-    }
-    
     /* Loading animation */
     .loading-dots {
       display: inline-block;
@@ -435,13 +450,13 @@
   </div>
   
   <div id="question-section" class="question-section">
-        <button id="analyze-btn" class="analyze-btn">Scout the Trail</button>
+        <button id="analyze-btn" class="analyze-btn hidden">Scout the Trail</button>
     
     <div class="input-group">
       <input 
         type="text" 
         id="question-input" 
-        placeholder="e.g., where's the summit register? (Press Enter)"
+        placeholder="e.g., where's the summit register?"
         class="question-input"
       />
     </div>
@@ -460,15 +475,15 @@
     </div>
     
     <div class="source-section">
-      <div class="source-title">Trail Marker:</div>
-      <div class="source-url" id="source-url"></div>
-      <div class="source-title-text" id="source-title"></div>
+      <div class="source-title" id="source-title">Trail Marker:</div>
+      <a class="source-url" id="source-url" href="#" target="_blank"></a>
+      <!-- <div class="source-title-text" id="source-title"></div> -->
     </div>
     
-    <div class="buttons">
+    <!-- <div class="buttons">
       <button id="go-to-source-btn" class="btn btn-primary">Follow Trail</button>
       <button id="feedback-btn" class="btn btn-secondary">Helpful trail info?</button>
-    </div>
+    </div> -->
     
     <div class="feedback hidden" id="feedback">
       <div class="feedback-text">Was this trail guidance helpful?</div>

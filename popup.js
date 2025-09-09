@@ -12,6 +12,15 @@ let isScouted = false;
 let isScouting = false; // Track if scouting is in progress
 let mountaineeringUpdateInterval = null;
 
+// Performance tracking
+const performanceMetrics = {
+  pageCheckTimes: [],
+  domainCheckTimes: []
+};
+
+// Smart timeout system
+const TIMEOUT_MS = 2000; // Increased to 2 seconds for better reliability
+
 // Log performance optimization
 let logBuffer = [];
 let logDisplayLimit = 50; // Show only last 50 lines
@@ -71,8 +80,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Add Enter key support
   questionInputEl.addEventListener('keypress', handleEnterKey);
   
+  // Add click support for source URL
+  sourceUrlEl.addEventListener('click', handleSourceClick);
+  
   // Load persistent state
   await loadPersistentState();
+  
+  // Show loading message while checking website status
+  showStatus('Checking if we\'ve been here before', 'working');
   
   // Check if current website is already scouted
   await checkWebsiteStatus();
@@ -125,7 +140,7 @@ async function clearPersistentState() {
   }
 }
 
-// Check if current website is already scouted (REAL-TIME CHECK)
+// Check if current website is already scouted (CACHE-ONLY VERSION)
 async function checkWebsiteStatus() {
   try {
     // Get current tab URL
@@ -133,71 +148,93 @@ async function checkWebsiteStatus() {
     const tabUrl = tab.url;
     
     if (!tabUrl || tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://')) {
-      await showScoutButton();
+      showError('Sherpa can only scout regular websites');
       return;
     }
-    
-    // Always update current URL and domain
+
     currentUrl = tabUrl;
     currentDomain = extractDomain(tabUrl);
     
-    addDebugLog(`🍃 Real-time website check: ${tabUrl}`);
+    addDebugLog(`Checking cached state for: ${currentUrl}`);
     
-    // Ensure clean UI state before checking
-    questionInputEl.classList.add('hidden');
-    queryBtnEl.classList.add('hidden');
-    statusEl.classList.add('hidden');
+    // Show loading status
+    showStatus('Checking if we\'ve been here before...', 'working');
     
-    // ALWAYS perform real-time check with Pathfinder API
-    // This ensures we detect if a previously scouted website has been deleted
-    // Check for the specific URL path, not just the domain
-    const checkResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        url: tabUrl,  // Check the specific URL path
-        checkVectorIndex: true,
-        checkSpecificPath: true  // Flag to indicate we want path-specific checking
-      }),
-    });
+    // Load cached state
+    const result = await chrome.storage.local.get(['sherpaState']);
     
-    if (checkResponse.ok) {
-      const checkData = await checkResponse.json();
-      addDebugLog(`🌿 Real-time check response: ${JSON.stringify(checkData, null, 2)}`);
+    if (result.sherpaState && 
+        result.sherpaState.url === currentUrl && 
+        result.sherpaState.isScouted) {
       
-      if (checkData.exists && checkData.pages && checkData.pages.length > 0) {
-        // Specific URL path is currently scouted in database
-        currentSiteId = checkData.siteId;
-        isScouted = true;
-        await savePersistentState();
-        
-        addDebugLog('🌿 Specific URL path confirmed scouted - showing query interface');
-        hideScoutButton();
-        showQueryButton();
-        // Don't show "already scouted" message - just show query interface
-        return;
-      } else {
-        // URL path not scouted or was deleted from database
-        addDebugLog('🌿 URL path not scouted or was deleted - clearing state and showing scout button');
-        await clearWebsiteState();
-        await showScoutButton();
-        return;
-      }
-    } else {
-      // API check failed - treat as not scouted
-      addDebugLog(`🍂 API check failed (HTTP ${checkResponse.status}) - treating as not scouted`);
-      await clearWebsiteState();
-      await showScoutButton();
+      addDebugLog(`Found cached state for: ${currentUrl} - showing query interface`);
+      currentSiteId = result.sherpaState.siteId;
+      isScouted = true;
+      hideStatus();
+      showQueryButton();
       return;
     }
     
+    // No cached state or different URL - show scout button
+    addDebugLog(`No cached state found for: ${currentUrl} - showing scout button`);
+    hideStatus();
+    showScoutButton();
+    
   } catch (error) {
-    addDebugLog(`🍂 Real-time website check failed: ${error.message}`);
-    // On error, clear state and show scout button as fallback
-    await clearWebsiteState();
-    await showScoutButton();
+    addDebugLog(`Website check failed: ${error.message}`);
+    showError('Failed to check website status');
+    hideStatus();
+    showScoutButton();
+  }
+}
+
+// Helper function: Direct page check
+async function checkPageDirect(url) {
+  const response = await fetch('https://pathfinder-bay-mu.vercel.app/api/sherpa/v1/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      url: url,
+      checkVectorIndex: true,
+      checkSpecificPath: true
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  
+  return await response.json();
+}
+
+// Helper function: Domain-only check
+async function checkDomainOnly(domain) {
+  const response = await fetch('https://pathfinder-bay-mu.vercel.app/api/sherpa/v1/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      url: `https://${domain}`,
+      checkVectorIndex: true,
+      checkSpecificPath: false
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  
+  return await response.json();
+}
+
+// Helper function: Log performance metrics
+function logPerformanceMetrics() {
+  if (performanceMetrics.pageCheckTimes.length > 0) {
+    const avgPageTime = performanceMetrics.pageCheckTimes.reduce((a, b) => a + b, 0) / performanceMetrics.pageCheckTimes.length;
+    addDebugLog(`Average page check time: ${avgPageTime.toFixed(0)}ms`);
+  }
+  if (performanceMetrics.domainCheckTimes.length > 0) {
+    const avgDomainTime = performanceMetrics.domainCheckTimes.reduce((a, b) => a + b, 0) / performanceMetrics.domainCheckTimes.length;
+    addDebugLog(`Average domain check time: ${avgDomainTime.toFixed(0)}ms`);
   }
 }
 
@@ -275,16 +312,26 @@ function handleEnterKey(event) {
       return;
     }
     
-    // Check which button should be active
+    // Check which action should be active based on current state
     if (!analyzeBtnEl.classList.contains('hidden') && !analyzeBtnEl.disabled) {
       // Scout button is visible and enabled - trigger scouting
       addDebugLog('⌨️ Enter key pressed - triggering scout trail');
       handleAnalyze();
-    } else if (!queryBtnEl.classList.contains('hidden')) {
-      // Query button is visible - trigger query
+    } else if (isScouted && !questionInputEl.classList.contains('hidden')) {
+      // Question input is visible and site is scouted - trigger query
       addDebugLog('⌨️ Enter key pressed - triggering ask question');
       handleQuery();
     }
+  }
+}
+
+// Handle source URL click
+function handleSourceClick(event) {
+  event.preventDefault(); // Prevent default anchor behavior
+  const url = sourceUrlEl.href;
+  if (url && url !== '#') {
+    addDebugLog(`🌿 Opening source URL: ${url}`);
+    chrome.tabs.create({ url: url });
   }
 }
 
@@ -315,9 +362,11 @@ async function showScoutButton() {
   // Hide ALL other elements first
   queryBtnEl.classList.add('hidden');
   questionInputEl.classList.add('hidden');
-  statusEl.classList.add('hidden');
   resultEl.classList.add('hidden');
   errorEl.classList.add('hidden');
+  
+  // Hide loading message and show scout button
+  hideStatus();
   
   // Re-enable and show the scout button
   analyzeBtnEl.disabled = false;
@@ -333,7 +382,7 @@ async function showScoutButton() {
 function showQueryButton() {
   addDebugLog('🌿 Showing query section with animation');
   
-  // Show query button and input section
+  // Show query button and input section together
   setTimeout(() => {
     queryBtnEl.classList.remove('hidden');
     questionInputEl.classList.remove('hidden');
@@ -345,7 +394,7 @@ function showQueryButton() {
 function showStatus(message, type) {
   statusTextEl.textContent = message;
   statusEl.className = `status ${type}`;
-  statusEl.classList.remove('hidden');
+  statusEl.classList.remove('hidden', 'fade-out');
   
   // Add loading animation for working status
   if (type === 'working') {
@@ -357,10 +406,15 @@ function showStatus(message, type) {
   addDebugLog(`🌿 Trail status: ${message}`);
 }
 
-// Hide status with smooth animation
+// Hide status with smooth fade-out animation
 function hideStatus() {
-  statusEl.classList.add('hidden');
+  statusEl.classList.add('fade-out');
+  setTimeout(() => {
+    statusEl.classList.add('hidden');
+    statusEl.classList.remove('fade-out');
+  }, 300); // Match CSS transition duration
 }
+
 
 // Toggle debug log visibility
 function toggleDebugLog() {
@@ -424,6 +478,10 @@ function setupTabChangeListener() {
 // Show result with smooth animation
 function showResult(answer, sources) {
   addDebugLog('🌿 Showing result with animation');
+  addDebugLog(`🌿 Sources received: ${sources ? sources.length : 0} sources`);
+  if (sources && sources.length > 0) {
+    addDebugLog(`🌿 First source: ${JSON.stringify(sources[0])}`);
+  }
   
   // Hide status first
   hideStatus();
@@ -431,6 +489,16 @@ function showResult(answer, sources) {
   // Show result
   setTimeout(() => {
     resultEl.classList.remove('hidden');
+    addDebugLog('🌿 Result section shown');
+    
+    // Check source section visibility
+    const sourceSection = resultEl.querySelector('.source-section');
+    if (sourceSection) {
+      addDebugLog(`🌿 Source section display: "${window.getComputedStyle(sourceSection).display}"`);
+      addDebugLog(`🌿 Source section visibility: "${window.getComputedStyle(sourceSection).visibility}"`);
+    } else {
+      addDebugLog('🌿 Source section not found!');
+    }
     
     // Check if answer is "I don't know" or similar - hide answer section, show only trail marker
     if (answer.toLowerCase().includes("i don't know") || 
@@ -449,11 +517,37 @@ function showResult(answer, sources) {
       // Show trail marker with helpful message
       if (sources.length > 0) {
         const source = sources[0];
-        sourceTitleEl.textContent = 'Trail Marker:';
-        sourceUrlEl.textContent = source.url;
-        goToSourceBtnEl.onclick = () => {
-          chrome.tabs.create({ url: source.url });
-        };
+        addDebugLog(`🌿 Setting trail marker URL (no answer): ${source.url}`);
+        
+        try {
+          if (!sourceTitleEl) {
+            addDebugLog('🍂 sourceTitleEl not found!');
+            return;
+          }
+          if (!sourceUrlEl) {
+            addDebugLog('🍂 sourceUrlEl not found!');
+            return;
+          }
+          
+          sourceTitleEl.textContent = 'Trail Marker:';
+          sourceUrlEl.textContent = source.url;
+          sourceUrlEl.href = source.url; // Make it a proper link
+          
+          addDebugLog(`🌿 Source URL element text: "${sourceUrlEl.textContent}"`);
+          addDebugLog(`🌿 Source URL element href: "${sourceUrlEl.href}"`);
+          addDebugLog(`🌿 Source URL element display: "${window.getComputedStyle(sourceUrlEl).display}"`);
+          addDebugLog(`🌿 Source URL element visibility: "${window.getComputedStyle(sourceUrlEl).visibility}"`);
+          
+          if (goToSourceBtnEl) {
+            goToSourceBtnEl.onclick = () => {
+              chrome.tabs.create({ url: source.url });
+            };
+          }
+        } catch (error) {
+          addDebugLog(`🍂 Error setting trail marker: ${error.message}`);
+        }
+      } else {
+        addDebugLog('🌿 No sources available for trail marker (no answer)');
       }
     } else {
       // Normal answer - show both answer and trail marker
@@ -466,11 +560,37 @@ function showResult(answer, sources) {
       
       if (sources.length > 0) {
         const source = sources[0];
-        sourceTitleEl.textContent = 'Trail Marker:';
-        sourceUrlEl.textContent = source.url;
-        goToSourceBtnEl.onclick = () => {
-          chrome.tabs.create({ url: source.url });
-        };
+        addDebugLog(`🌿 Setting trail marker URL (with answer): ${source.url}`);
+        
+        try {
+          if (!sourceTitleEl) {
+            addDebugLog('🍂 sourceTitleEl not found!');
+            return;
+          }
+          if (!sourceUrlEl) {
+            addDebugLog('🍂 sourceUrlEl not found!');
+            return;
+          }
+          
+          sourceTitleEl.textContent = 'Trail Marker:';
+          sourceUrlEl.textContent = source.url;
+          sourceUrlEl.href = source.url; // Make it a proper link
+          
+          addDebugLog(`🌿 Source URL element text: "${sourceUrlEl.textContent}"`);
+          addDebugLog(`🌿 Source URL element href: "${sourceUrlEl.href}"`);
+          addDebugLog(`🌿 Source URL element display: "${window.getComputedStyle(sourceUrlEl).display}"`);
+          addDebugLog(`🌿 Source URL element visibility: "${window.getComputedStyle(sourceUrlEl).visibility}"`);
+          
+          if (goToSourceBtnEl) {
+            goToSourceBtnEl.onclick = () => {
+              chrome.tabs.create({ url: source.url });
+            };
+          }
+        } catch (error) {
+          addDebugLog(`🍂 Error setting trail marker: ${error.message}`);
+        }
+      } else {
+        addDebugLog('🌿 No sources available for trail marker (with answer)');
       }
     }
   }, 200);
@@ -547,7 +667,7 @@ async function handleAnalyze() {
     
     if (checkResponse.ok) {
       const checkData = await checkResponse.json();
-      addDebugLog(`🌿 Check response: ${JSON.stringify(checkData, null, 2)}`);
+      addDebugLog(`🌿 Check response: ${checkData.exists ? 'Found' : 'Not found'} (${checkData.pages?.length || 0} pages)`);
       
       if (checkData.exists && checkData.pages && checkData.pages.length > 0) {
         addDebugLog('🌿 Specific URL path already mapped with waypoints');
@@ -584,12 +704,12 @@ async function handleAnalyze() {
     }
     
     const siteData = await createSiteResponse.json();
-    addDebugLog(`🌿 Base camp established: ${JSON.stringify(siteData, null, 2)}`);
+    addDebugLog(`🌿 Base camp established: Site ID ${siteData.id} for ${siteData.domain}`);
     currentSiteId = siteData.id;
     
     // Now start exploring using the streaming crawl API
     addDebugLog('🌱 Starting trail exploration...');
-    showStatus('Exploring the trail... This may take a few minutes.', 'working');
+    showStatus('Exploring the trail... This may take a minute.', 'working');
     
     // Reduce log verbosity during heavy crawling activity
     reduceLogVerbosity();
@@ -751,7 +871,7 @@ async function handleQuery() {
       
       if (searchResponse.ok) {
         const searchData = await searchResponse.json();
-        addDebugLog(`🌿 Pathfinder search found ${searchData.results?.length || 0} relevant pages`);
+        addDebugLog(`🌿 Pathfinder search: ${searchData.results?.length || 0} relevant pages found`);
         
         if (searchData.results && searchData.results.length > 0) {
           showStatus('Found relevant pages, generating answer...', 'working');
@@ -777,7 +897,7 @@ async function handleQuery() {
           
           if (queryResponse.ok) {
             const data = await queryResponse.json();
-            addDebugLog(`🌿 Pathfinder-optimized response: ${JSON.stringify(data, null, 2)}`);
+            addDebugLog(`🌿 Pathfinder-optimized response: Answer generated (${data.sources?.length || 0} sources)`);
             
             currentAnswer = data.answer;
             currentSource = data.sources && data.sources.length > 0 ? data.sources[0] : null;
@@ -813,7 +933,7 @@ async function handleQuery() {
       
       if (vectorResponse.ok) {
         const vectorData = await vectorResponse.json();
-        addDebugLog(`🌿 Vector search found ${vectorData.results?.length || 0} relevant pages`);
+        addDebugLog(`🌿 Vector search: ${vectorData.results?.length || 0} relevant pages found`);
         
         if (vectorData.results && vectorData.results.length > 0) {
           showStatus('Found relevant pages, generating answer...', 'working');
@@ -836,7 +956,7 @@ async function handleQuery() {
           
           if (queryResponse.ok) {
             const data = await queryResponse.json();
-            addDebugLog(`🌿 Vector-optimized response: ${JSON.stringify(data, null, 2)}`);
+            addDebugLog(`🌿 Vector-optimized response: Answer generated (${data.sources?.length || 0} sources)`);
             
             currentAnswer = data.answer;
             currentSource = data.sources && data.sources.length > 0 ? data.sources[0] : null;
@@ -875,7 +995,7 @@ async function handleQuery() {
     }
     
     const data = await response.json();
-    addDebugLog(`🌿 Sherpa response: ${JSON.stringify(data, null, 2)}`);
+    addDebugLog(`🌿 Sherpa response: Answer generated (${data.sources?.length || 0} sources)`);
     
     // Display the answer
     currentAnswer = data.answer;
