@@ -1510,6 +1510,9 @@ function stopVoiceRecognition() {
     voiceTimeout = null;
   }
   isListening = false;
+  
+  // Hide the listening status
+  hideStatus();
 }
 
 function handleVoiceStart() {
@@ -1594,6 +1597,9 @@ function handleVoiceEnd() {
   addDebugLog('🎤 Voice recognition ended');
   isListening = false;
   updateVoiceButtonState('default');
+  
+  // Hide the listening status
+  hideStatus();
   
   // Clear timeout
   if (voiceTimeout) {
