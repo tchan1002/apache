@@ -418,9 +418,9 @@ async function showScoutButton() {
   currentAnswer = null;
   currentSource = null;
   
-  // Hide ALL other elements first
+  // Hide ALL other elements first with smooth transitions
   queryBtnEl.classList.add('hidden');
-  questionInputEl.classList.add('hidden');
+  smoothHide(questionInputEl);
   resultEl.classList.add('hidden');
   errorEl.classList.add('hidden');
   
@@ -450,10 +450,10 @@ function showQueryButton() {
   
   addDebugLog('🌿 Showing query section with animation');
   
-  // Show query interface
+  // Show query interface with smooth transitions
   queryBtnEl.classList.remove('hidden');
-  questionInputEl.classList.remove('hidden');
   questionSectionEl.classList.remove('hidden');
+  smoothShow(questionInputEl);
   
   // Update voice button visibility based on simple rule
   updateVoiceButtonVisibility();
@@ -704,7 +704,7 @@ async function handleAnalyze() {
     // IMMEDIATELY disable the scout button to prevent double-clicks and race conditions
     analyzeBtnEl.disabled = true;
     analyzeBtnEl.classList.add('hidden');
-    questionInputEl.classList.add('hidden');
+    smoothHide(questionInputEl);
     queryBtnEl.classList.add('hidden');
     
     // Update voice button visibility (will hide it since no entry field)
@@ -799,8 +799,8 @@ async function handleAnalyze() {
     // Reduce log verbosity during heavy crawling activity
     reduceLogVerbosity();
     
-    // Hide input during scouting
-    questionInputEl.classList.add('hidden');
+    // Hide input during scouting with smooth transitions
+    smoothHide(questionInputEl);
     queryBtnEl.classList.add('hidden');
     
     // Update voice button visibility (will hide it since no entry field)
@@ -1159,6 +1159,27 @@ function initializeVoiceRecognition() {
 
 // Note: Removed iframe and new tab methods - now using direct permission requests
 
+// Smooth transition helper for elements
+function smoothShow(element) {
+  if (!element) return;
+  element.style.display = element === voiceBtnEl ? 'flex' : 'block';
+  // Small delay to ensure display is set before removing hidden class
+  setTimeout(() => {
+    element.classList.remove('hidden');
+  }, 10);
+}
+
+function smoothHide(element) {
+  if (!element) return;
+  element.classList.add('hidden');
+  // Hide completely after transition
+  setTimeout(() => {
+    if (element.classList.contains('hidden')) {
+      element.style.display = 'none';
+    }
+  }, 300); // Match CSS transition duration
+}
+
 // Simple rule: microphone only shows when there's an entry field AND microphone is working
 function updateVoiceButtonVisibility() {
   if (!voiceBtnEl) return;
@@ -1167,11 +1188,9 @@ function updateVoiceButtonVisibility() {
   const micEnabled = isVoiceSupported && microphonePermissionGranted;
   
   if (hasEntryField && micEnabled) {
-    voiceBtnEl.style.display = 'flex';
-    voiceBtnEl.classList.remove('hidden');
+    smoothShow(voiceBtnEl);
   } else {
-    voiceBtnEl.style.display = 'none';
-    voiceBtnEl.classList.add('hidden');
+    smoothHide(voiceBtnEl);
   }
 }
 
