@@ -389,19 +389,28 @@ function handleEnterKey(event) {
   }
 }
 
-// Handle Space key press for voice input
+// Handle Space key press for scouting or voice input
 function handleSpaceKey(event) {
   if (event.code === 'Space') {
-    // Only trigger voice input if we're in query mode, voice is supported, AND voice button is visible
+    // Prevent default space behavior (scrolling)
+    event.preventDefault();
+    
+    // Check if scout button is available
+    if (!analyzeBtnEl.classList.contains('hidden') && !analyzeBtnEl.disabled) {
+      addDebugLog('⌨️ Space key pressed - triggering scout trail');
+      handleAnalyze();
+      return;
+    }
+    
+    // Check if voice input is available
     if (isScouted && !queryBtnEl.classList.contains('hidden') && isVoiceSupported && isVoiceButtonVisible()) {
-      // Prevent default space behavior (scrolling)
-      event.preventDefault();
-      
       addDebugLog('⌨️ Space key pressed - triggering voice input');
       handleVoiceInput();
-    } else {
-      addDebugLog('⌨️ Space key pressed but voice input not available (scouted: ' + isScouted + ', query visible: ' + !queryBtnEl.classList.contains('hidden') + ', voice supported: ' + isVoiceSupported + ', voice button visible: ' + isVoiceButtonVisible() + ')');
+      return;
     }
+    
+    // No action available
+    addDebugLog('⌨️ Space key pressed but no action available (scout: ' + (!analyzeBtnEl.classList.contains('hidden') && !analyzeBtnEl.disabled) + ', voice: ' + (isScouted && !queryBtnEl.classList.contains('hidden') && isVoiceSupported && isVoiceButtonVisible()) + ')');
   }
 }
 
