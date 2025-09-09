@@ -382,6 +382,10 @@ async function showScoutButton() {
 function showQueryButton() {
   addDebugLog('🌿 Showing query section with animation');
   
+  // Ensure both elements are hidden first
+  queryBtnEl.classList.add('hidden');
+  questionInputEl.classList.add('hidden');
+  
   // Show query button and input section together
   setTimeout(() => {
     queryBtnEl.classList.remove('hidden');
@@ -674,6 +678,13 @@ async function handleAnalyze() {
         currentSiteId = checkData.siteId;
         isScouted = true;
         isScouting = false; // Reset scouting state
+        
+        // Stop any ongoing mountaineering updates
+        stopMountaineeringUpdates();
+        
+        // Clear the scouting status
+        hideStatus();
+        
         await savePersistentState();
         
         hideScoutButton();
