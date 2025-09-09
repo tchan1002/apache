@@ -9,6 +9,7 @@ let currentSiteId = null;
 let currentUrl = null;
 let currentDomain = null;
 let isScouted = false;
+let isScouting = false; // Track if scouting is in progress
 let mountaineeringUpdateInterval = null;
 
 // Log performance optimization
@@ -54,6 +55,7 @@ const noBtnEl = document.getElementById('no-btn');
 const errorEl = document.getElementById('error');
 const errorTextEl = document.getElementById('error-text');
 const debugEl = document.getElementById('debug');
+const debugHeaderEl = document.getElementById('debug-header');
 const debugContentEl = document.getElementById('debug-content');
 const copyLogBtnEl = document.getElementById('copy-log-btn');
 const clearLogBtnEl = document.getElementById('clear-log-btn');
@@ -64,6 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   queryBtnEl.addEventListener('click', handleQuery);
   copyLogBtnEl.addEventListener('click', copyDebugLog);
   clearLogBtnEl.addEventListener('click', clearDebugLog);
+  debugHeaderEl.addEventListener('click', toggleDebugLog);
   
   // Add Enter key support
   questionInputEl.addEventListener('keypress', handleEnterKey);
@@ -73,6 +76,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Check if current website is already scouted
   await checkWebsiteStatus();
+  
+  // Set up tab change listener for persistent window
+  setupTabChangeListener();
   
   addDebugLog('🌿 Sherpa guide ready - ready to scout trails');
 });
@@ -170,7 +176,7 @@ async function checkWebsiteStatus() {
         addDebugLog('🌿 Specific URL path confirmed scouted - showing query interface');
         hideScoutButton();
         showQueryButton();
-        showStatus('Trail already scouted! Ready for your questions.', 'success');
+        // Don't show "already scouted" message - just show query interface
         return;
       } else {
         // URL path not scouted or was deleted from database
@@ -263,15 +269,15 @@ function handleEnterKey(event) {
   if (event.key === 'Enter') {
     event.preventDefault(); // Prevent form submission
     
-    // Don't allow Enter key during scouting (when status is working)
-    if (statusEl.classList.contains('working') || mountaineeringUpdateInterval) {
+    // Don't allow Enter key during scouting
+    if (isScouting || statusEl.classList.contains('working') || mountaineeringUpdateInterval) {
       addDebugLog('⌨️ Enter key pressed but ignored - currently scouting');
       return;
     }
     
     // Check which button should be active
-    if (!analyzeBtnEl.classList.contains('hidden')) {
-      // Scout button is visible - trigger scouting
+    if (!analyzeBtnEl.classList.contains('hidden') && !analyzeBtnEl.disabled) {
+      // Scout button is visible and enabled - trigger scouting
       addDebugLog('⌨️ Enter key pressed - triggering scout trail');
       handleAnalyze();
     } else if (!queryBtnEl.classList.contains('hidden')) {
@@ -302,6 +308,7 @@ async function showScoutButton() {
   // Reset state
   currentSiteId = null;
   isScouted = false;
+  isScouting = false; // Reset scouting state
   currentAnswer = null;
   currentSource = null;
   
@@ -312,7 +319,8 @@ async function showScoutButton() {
   resultEl.classList.add('hidden');
   errorEl.classList.add('hidden');
   
-  // Show ONLY the scout button (not the entire question section)
+  // Re-enable and show the scout button
+  analyzeBtnEl.disabled = false;
   analyzeBtnEl.classList.remove('hidden');
   
   // Debug: Check if button is visible
@@ -354,6 +362,65 @@ function hideStatus() {
   statusEl.classList.add('hidden');
 }
 
+// Toggle debug log visibility
+function toggleDebugLog() {
+  debugContentEl.classList.toggle('hidden');
+  addDebugLog('🌿 Trail log toggled');
+}
+
+// Set up tab change listener for persistent window
+function setupTabChangeListener() {
+  // Listen for tab updates (navigation, URL changes)
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    // Only respond to completed navigation on the active tab
+    if (changeInfo.status === 'complete' && tab.active) {
+      addDebugLog(`🌿 Tab navigation detected: ${tab.url}`);
+      
+      // Add smooth transition effect
+      showStatus('Updating trail view...', 'working');
+      
+      // Small delay for smooth transition
+      setTimeout(async () => {
+        // Update current URL and domain
+        currentUrl = tab.url;
+        currentDomain = extractDomain(tab.url);
+        
+        // Check if the new page is scouted
+        await checkWebsiteStatus();
+        
+        // Hide the updating status
+        hideStatus();
+      }, 300);
+    }
+  });
+  
+  // Listen for tab activation (switching between tabs)
+  chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    try {
+      const tab = await chrome.tabs.get(activeInfo.tabId);
+      addDebugLog(`🌿 Tab switched to: ${tab.url}`);
+      
+      // Add smooth transition effect
+      showStatus('Switching trail view...', 'working');
+      
+      // Small delay for smooth transition
+      setTimeout(async () => {
+        // Update current URL and domain
+        currentUrl = tab.url;
+        currentDomain = extractDomain(tab.url);
+        
+        // Check if the new page is scouted
+        await checkWebsiteStatus();
+        
+        // Hide the updating status
+        hideStatus();
+      }, 300);
+    } catch (error) {
+      addDebugLog(`🍂 Error handling tab switch: ${error.message}`);
+    }
+  });
+}
+
 // Show result with smooth animation
 function showResult(answer, sources) {
   addDebugLog('🌿 Showing result with animation');
@@ -365,20 +432,46 @@ function showResult(answer, sources) {
   setTimeout(() => {
     resultEl.classList.remove('hidden');
     
-    // Check if answer is "I don't know" and provide special message
-    if (answer.toLowerCase().includes("i don't know") || answer.toLowerCase().includes("i do not know")) {
-      answerTextEl.textContent = "Sherpa's not sure, but check out the trail marker below!";
+    // Check if answer is "I don't know" or similar - hide answer section, show only trail marker
+    if (answer.toLowerCase().includes("i don't know") || 
+        answer.toLowerCase().includes("i do not know") ||
+        answer.toLowerCase().includes("i'm not sure") ||
+        answer.toLowerCase().includes("i am not sure") ||
+        answer.toLowerCase().includes("unable to find") ||
+        answer.toLowerCase().includes("no information found")) {
+      
+      // Hide the answer section but show the trail marker
+      const answerSection = resultEl.querySelector('.answer-section');
+      if (answerSection) {
+        answerSection.style.display = 'none'; // Comment out instead of remove
+      }
+      
+      // Show trail marker with helpful message
+      if (sources.length > 0) {
+        const source = sources[0];
+        sourceTitleEl.textContent = 'Trail Marker:';
+        sourceUrlEl.textContent = source.url;
+        goToSourceBtnEl.onclick = () => {
+          chrome.tabs.create({ url: source.url });
+        };
+      }
     } else {
+      // Normal answer - show both answer and trail marker
+      const answerSection = resultEl.querySelector('.answer-section');
+      if (answerSection) {
+        answerSection.style.display = 'block'; // Make sure it's visible
+      }
+      
       answerTextEl.textContent = answer;
-    }
-    
-    if (sources.length > 0) {
-      const source = sources[0];
-      sourceTitleEl.textContent = source.title || 'Untitled';
-      sourceUrlEl.textContent = source.url;
-      goToSourceBtnEl.onclick = () => {
-        chrome.tabs.create({ url: source.url });
-      };
+      
+      if (sources.length > 0) {
+        const source = sources[0];
+        sourceTitleEl.textContent = 'Trail Marker:';
+        sourceUrlEl.textContent = source.url;
+        goToSourceBtnEl.onclick = () => {
+          chrome.tabs.create({ url: source.url });
+        };
+      }
     }
   }, 200);
 }
@@ -401,17 +494,27 @@ function hideError() {
 }
 
 async function handleAnalyze() {
+  // Prevent multiple simultaneous scouting operations
+  if (isScouting) {
+    addDebugLog('🌿 Scouting already in progress - ignoring duplicate request');
+    return;
+  }
+  
   try {
+    // Set scouting state
+    isScouting = true;
+    
     // Stop any existing mountaineering updates
     stopMountaineeringUpdates();
     
-    addDebugLog('🌲 Starting trail reconnaissance...');
-    showStatus('Scouting the trail...', 'working');
-    
-    // Hide scout button and question input during scouting
+    // IMMEDIATELY disable the scout button to prevent double-clicks and race conditions
+    analyzeBtnEl.disabled = true;
     analyzeBtnEl.classList.add('hidden');
     questionInputEl.classList.add('hidden');
     queryBtnEl.classList.add('hidden');
+    
+    addDebugLog('🌲 Starting trail reconnaissance...');
+    showStatus('Scouting the trail...', 'working');
     
     // Get current tab URL
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -450,10 +553,11 @@ async function handleAnalyze() {
         addDebugLog('🌿 Specific URL path already mapped with waypoints');
         currentSiteId = checkData.siteId;
         isScouted = true;
+        isScouting = false; // Reset scouting state
         await savePersistentState();
         
         hideScoutButton();
-        showStatus('Trail already scouted! Ready for your questions.', 'success');
+        // Don't show "already scouted" message - just show query interface
         return;
       }
     }
@@ -536,6 +640,7 @@ async function handleAnalyze() {
                 stopMountaineeringUpdates(); // Stop the mountaineering updates
                 restoreLogVerbosity(); // Restore normal log verbosity
                 isScouted = true;
+                isScouting = false; // Reset scouting state
                 await savePersistentState();
                 
                 hideScoutButton();
@@ -544,6 +649,7 @@ async function handleAnalyze() {
               } else if (data.type === 'status' && data.message.includes('error')) {
                 stopMountaineeringUpdates(); // Stop updates on error too
                 restoreLogVerbosity(); // Restore normal log verbosity
+                isScouting = false; // Reset scouting state
                 throw new Error(`Trail exploration error: ${data.message}`);
               }
             } catch (e) {
@@ -557,6 +663,7 @@ async function handleAnalyze() {
       addDebugLog(`🍂 Trail exploration stream error: ${error.message}`);
       stopMountaineeringUpdates(); // Stop updates on stream error
       restoreLogVerbosity(); // Restore normal log verbosity
+      isScouting = false; // Reset scouting state
       throw error;
     }
     
@@ -565,6 +672,12 @@ async function handleAnalyze() {
     addDebugLog(`🍂 Trail scouting error: ${error.message}`);
     stopMountaineeringUpdates(); // Stop updates on any error
     restoreLogVerbosity(); // Restore normal log verbosity
+    isScouting = false; // Reset scouting state
+    
+    // Re-enable the scout button on error
+    analyzeBtnEl.disabled = false;
+    analyzeBtnEl.classList.remove('hidden');
+    
     showError(`Trail scouting failed: ${error.message}`);
   }
 }

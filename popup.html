@@ -382,6 +382,27 @@
       white-space: pre-wrap;
       max-height: 100px;
       overflow-y: auto;
+      transition: all 0.3s ease-in-out;
+      opacity: 1;
+      transform: translateY(0);
+    }
+    
+    .debug-content.hidden {
+      opacity: 0;
+      transform: translateY(-10px);
+      pointer-events: none;
+      max-height: 0;
+      overflow: hidden;
+    }
+    
+    .debug-header {
+      cursor: pointer;
+      user-select: none;
+    }
+    
+    .debug-header:hover {
+      background: #e5e7eb;
+      border-radius: 4px;
     }
     
     /* Loading animation */
@@ -464,14 +485,14 @@
   
   <!-- Debug section -->
   <div id="debug" class="debug">
-    <div class="debug-header">
+    <div class="debug-header" id="debug-header">
       🌿 Trail Log
       <div class="debug-buttons">
         <button id="copy-log-btn" class="copy-log-btn">📋 Copy</button>
         <button id="clear-log-btn" class="clear-log-btn">Clear</button>
       </div>
     </div>
-    <div id="debug-content" class="debug-content"></div>
+    <div id="debug-content" class="debug-content hidden"></div>
   </div>
   
   <script src="popup.js"></script>
