@@ -19,6 +19,14 @@ let isVoiceSupported = false;
 let microphonePermissionGranted = false;
 // Removed permissionIframe - using direct permission requests
 
+// Voice recognition timeout and detection
+let voiceTimeout = null;
+let voiceStartTime = null;
+let lastTranscriptTime = null;
+let ummCount = 0;
+const VOICE_TIMEOUT_MS = 5000; // 5 seconds of silence
+const UMM_THRESHOLD = 3; // Stop after 3 "umm"s
+
 // Performance tracking
 const performanceMetrics = {
   pageCheckTimes: [],
@@ -389,7 +397,7 @@ function handleEnterKey(event) {
   }
 }
 
-// Handle Space key press for scouting or voice input
+// Handle Space key press for scouting or starting voice input
 function handleSpaceKey(event) {
   if (event.code === 'Space') {
     // Prevent default space behavior (scrolling)
@@ -402,15 +410,15 @@ function handleSpaceKey(event) {
       return;
     }
     
-    // Check if voice input is available
-    if (isScouted && !queryBtnEl.classList.contains('hidden') && isVoiceSupported && isVoiceButtonVisible()) {
-      addDebugLog('⌨️ Space key pressed - triggering voice input');
+    // Check if voice input can be started (only start, never stop)
+    if (isScouted && !queryBtnEl.classList.contains('hidden') && isVoiceSupported && isVoiceButtonVisible() && !isListening) {
+      addDebugLog('⌨️ Space key pressed - starting voice input');
       handleVoiceInput();
       return;
     }
     
     // No action available
-    addDebugLog('⌨️ Space key pressed but no action available (scout: ' + (!analyzeBtnEl.classList.contains('hidden') && !analyzeBtnEl.disabled) + ', voice: ' + (isScouted && !queryBtnEl.classList.contains('hidden') && isVoiceSupported && isVoiceButtonVisible()) + ')');
+    addDebugLog('⌨️ Space key pressed but no action available (scout: ' + (!analyzeBtnEl.classList.contains('hidden') && !analyzeBtnEl.disabled) + ', voice start: ' + (isScouted && !queryBtnEl.classList.contains('hidden') && isVoiceSupported && isVoiceButtonVisible() && !isListening) + ')');
   }
 }
 
@@ -1283,6 +1291,38 @@ function isVoiceButtonVisible() {
   return isNotHidden && isDisplayed && isInInputRow;
 }
 
+// Check if transcript contains excessive "umm"s or "aa"s
+function hasExcessiveUmm(transcript) {
+  const lowerTranscript = transcript.toLowerCase();
+  const ummMatches = (lowerTranscript.match(/\b(um|uh|ah|er|mm|hmm)\b/g) || []).length;
+  return ummMatches >= UMM_THRESHOLD;
+}
+
+// Reset voice recognition tracking variables
+function resetVoiceTracking() {
+  voiceStartTime = Date.now();
+  lastTranscriptTime = Date.now();
+  ummCount = 0;
+  
+  // Clear any existing timeout
+  if (voiceTimeout) {
+    clearTimeout(voiceTimeout);
+    voiceTimeout = null;
+  }
+}
+
+// Start voice timeout (stops listening after silence)
+function startVoiceTimeout() {
+  if (voiceTimeout) {
+    clearTimeout(voiceTimeout);
+  }
+  
+  voiceTimeout = setTimeout(() => {
+    addDebugLog('🎤 Voice timeout - stopping due to silence');
+    stopVoiceRecognition();
+  }, VOICE_TIMEOUT_MS);
+}
+
 // Request microphone permission directly in popup context
 async function requestMicrophonePermission() {
   addDebugLog('🎤 Starting microphone permission request...');
@@ -1445,6 +1485,12 @@ function startVoiceRecognition() {
     updateVoiceButtonState('listening');
     showStatus('Sherpa\'s listening...', 'working');
     
+    // Reset tracking variables
+    resetVoiceTracking();
+    
+    // Start timeout for silence detection
+    startVoiceTimeout();
+    
     recognition.start();
   } catch (error) {
     addDebugLog(`🍂 Voice recognition start error: ${error.message}`);
@@ -1457,6 +1503,13 @@ function stopVoiceRecognition() {
     addDebugLog('🎤 Stopping voice recognition...');
     recognition.stop();
   }
+  
+  // Clear timeout and reset state
+  if (voiceTimeout) {
+    clearTimeout(voiceTimeout);
+    voiceTimeout = null;
+  }
+  isListening = false;
 }
 
 function handleVoiceStart() {
@@ -1467,6 +1520,18 @@ function handleVoiceStart() {
 function handleVoiceResult(event) {
   const transcript = event.results[0][0].transcript;
   addDebugLog(`🎤 Voice input received: "${transcript}"`);
+  
+  // Update last transcript time
+  lastTranscriptTime = Date.now();
+  
+  // Check for excessive "umm"s
+  if (hasExcessiveUmm(transcript)) {
+    addDebugLog('🎤 Excessive "umm"s detected - stopping voice recognition');
+    stopVoiceRecognition();
+    showStatus('You got this! Take a breath and try again.', 'success');
+    setTimeout(() => hideStatus(), 3000);
+    return;
+  }
   
   // Update the input field with the transcript
   questionInputEl.value = transcript;
@@ -1529,6 +1594,12 @@ function handleVoiceEnd() {
   addDebugLog('🎤 Voice recognition ended');
   isListening = false;
   updateVoiceButtonState('default');
+  
+  // Clear timeout
+  if (voiceTimeout) {
+    clearTimeout(voiceTimeout);
+    voiceTimeout = null;
+  }
 }
 
 function updateVoiceButtonState(state) {
