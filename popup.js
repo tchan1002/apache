@@ -351,8 +351,8 @@ function handleEnterKey(event) {
   if (event.key === 'Enter') {
     event.preventDefault(); // Prevent form submission
     
-    // Don't allow Enter key during scouting
-    if (isScouting || statusEl.classList.contains('working') || mountaineeringUpdateInterval) {
+    // Don't allow Enter key during scouting (but allow during check phase)
+    if (isScouting) {
       addDebugLog('⌨️ Enter key pressed but ignored - currently scouting');
       return;
     }
