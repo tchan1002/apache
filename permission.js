@@ -38,7 +38,7 @@ async function getUserPermission() {
         // Notify extension that permission was granted
         if (chrome && chrome.runtime) {
           chrome.runtime.sendMessage({ type: 'MICROPHONE_PERMISSION_GRANTED' });
-        } else if (window.parent) {
+        } else if (window.parent && window.parent !== window) {
           window.parent.postMessage({ type: 'MICROPHONE_PERMISSION_GRANTED' }, '*');
         }
 
@@ -53,7 +53,7 @@ async function getUserPermission() {
             type: 'MICROPHONE_PERMISSION_DENIED', 
             error: error.name 
           });
-        } else if (window.parent) {
+        } else if (window.parent && window.parent !== window) {
           window.parent.postMessage({ 
             type: 'MICROPHONE_PERMISSION_DENIED', 
             error: error.name 
@@ -99,7 +99,7 @@ getUserPermission()
 document.addEventListener('click', function() {
   if (chrome && chrome.runtime) {
     chrome.runtime.sendMessage({ type: 'CLOSE_IFRAME' });
-  } else if (window.parent) {
+  } else if (window.parent && window.parent !== window) {
     window.parent.postMessage({ type: 'CLOSE_IFRAME' }, '*');
   }
 });

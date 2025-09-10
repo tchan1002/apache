@@ -49,6 +49,8 @@ A ubiquitous voice-first assistant that gives users a sense of continuous suppor
 - Web Speech Synthesis API for voice output
 - Wake-word detection ("Hey Sherpa")
 - 10-second timeout for silence detection
+- Smart microphone permission handling - tests access first, only opens permission page if needed
+- Status messages show "Mic working" when microphone is ready
 
 ### Navigation Control
 - Programmatic control of browser tabs/URLs

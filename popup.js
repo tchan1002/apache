@@ -80,12 +80,12 @@ async function initializeVoiceRecognition() {
       
       addDebugLog('🎤 Voice recognition initialized successfully');
       updateState('ready');
-    } catch (error) {
+  } catch (error) {
       addDebugLog(`🍂 Voice recognition initialization failed: ${error.message}`);
       isVoiceSupported = false;
       updateState('error');
     }
-  } else {
+    } else {
     isVoiceSupported = false;
     addDebugLog('🍂 Voice recognition not supported in this browser');
     updateState('error');
@@ -117,16 +117,28 @@ async function startListening() {
     return;
   }
   
-  // Request microphone permission if needed
+  // Test microphone access first
   if (!microphonePermissionGranted) {
-    addDebugLog('🎤 Requesting microphone permission...');
-    try {
-      await requestMicrophonePermission();
-    } catch (error) {
-      addDebugLog(`🍂 Microphone permission denied: ${error.message}`);
-      updateState('error');
-      return;
+    addDebugLog('🎤 Testing microphone access...');
+    const hasAccess = await testMicrophoneAccess();
+    
+    if (hasAccess) {
+      addDebugLog('🎤 Microphone access confirmed - mic working!');
+      microphonePermissionGranted = true;
+      updateState('ready');
+      addDebugLog('🎤 Mic working - ready for voice input');
+    } else {
+      addDebugLog('🎤 Microphone access denied, opening permission page...');
+      try {
+        await requestMicrophonePermission();
+      } catch (error) {
+        addDebugLog(`🍂 Microphone permission denied: ${error.message}`);
+        updateState('error');
+        return;
+      }
     }
+  } else {
+    addDebugLog('🎤 Microphone permission already granted - mic working!');
   }
   
   try {
@@ -160,9 +172,76 @@ function stopListening() {
   updateState('ready');
 }
 
-// Request microphone permission
+// Request microphone permission using separate tab
 async function requestMicrophonePermission() {
-  console.log('🎤 Requesting microphone permission...');
+  addDebugLog('🎤 Requesting microphone permission via separate tab...');
+  
+  return new Promise((resolve, reject) => {
+    // Open permission page in a new tab
+    chrome.tabs.create({
+      url: chrome.runtime.getURL('permission.html'),
+      active: true
+    }, (tab) => {
+      if (chrome.runtime.lastError) {
+        addDebugLog(`🍂 Failed to open permission tab: ${chrome.runtime.lastError.message}`);
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      
+      addDebugLog(`🎤 Permission tab opened with ID: ${tab.id}`);
+      
+      // Listen for messages from the permission tab
+      const handleMessage = (message, sender, sendResponse) => {
+        if (sender.tab && sender.tab.id === tab.id) {
+          if (message.type === 'MICROPHONE_PERMISSION_GRANTED') {
+            addDebugLog('🎤 Microphone permission granted via tab');
+            microphonePermissionGranted = true;
+            chrome.tabs.remove(tab.id);
+            resolve();
+          } else if (message.type === 'MICROPHONE_PERMISSION_DENIED') {
+            addDebugLog(`🍂 Microphone permission denied via tab: ${message.error}`);
+            microphonePermissionGranted = false;
+            chrome.tabs.remove(tab.id);
+            reject(new Error(message.error || 'Permission denied'));
+          } else if (message.type === 'CLOSE_IFRAME') {
+            addDebugLog('🎤 Permission tab closed by user');
+            chrome.tabs.remove(tab.id);
+            reject(new Error('Permission request cancelled'));
+          }
+        }
+      };
+      
+      // Listen for tab removal (user closed tab)
+      const handleTabRemoved = (tabId) => {
+        if (tabId === tab.id) {
+          addDebugLog('🎤 Permission tab was closed by user');
+          reject(new Error('Permission request cancelled'));
+        }
+      };
+      
+      chrome.runtime.onMessage.addListener(handleMessage);
+      chrome.tabs.onRemoved.addListener(handleTabRemoved);
+      
+      // Cleanup function
+      const cleanup = () => {
+        chrome.runtime.onMessage.removeListener(handleMessage);
+        chrome.tabs.onRemoved.removeListener(handleTabRemoved);
+      };
+      
+      // Timeout after 60 seconds
+      setTimeout(() => {
+        addDebugLog('🍂 Permission request timed out');
+        cleanup();
+        chrome.tabs.remove(tab.id);
+        reject(new Error('Permission request timed out'));
+      }, 60000);
+    });
+  });
+}
+
+// Test microphone access directly
+async function testMicrophoneAccess() {
+  addDebugLog('🎤 Testing microphone access...');
   
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -182,11 +261,11 @@ async function requestMicrophonePermission() {
     stream.getTracks().forEach(track => track.stop());
     audioContext.close();
     
-    microphonePermissionGranted = true;
-    console.log('🎤 Microphone permission granted');
+    addDebugLog('🎤 Microphone access confirmed - mic working!');
+    return true;
   } catch (error) {
-    console.error('🍂 Microphone permission denied:', error);
-    throw error;
+    addDebugLog(`🍂 Microphone access test failed: ${error.name}`);
+    return false;
   }
 }
 
@@ -275,9 +354,9 @@ async function processVoiceCommand(transcript) {
       addDebugLog('🎯 Wake word detected');
       speakResponse("I'm listening. What can I help you with?");
       updateState('ready');
-    return;
-  }
-  
+      return;
+    }
+    
     // Navigation commands
     if (command.includes('take me to') || command.includes('go to') || command.includes('navigate to')) {
       addDebugLog('🧭 Processing navigation command');
@@ -297,8 +376,8 @@ async function processVoiceCommand(transcript) {
     else {
       addDebugLog('🔍 Processing web search command');
       await handleWebSearchCommand(command);
-    }
-    
+      }
+      
   } catch (error) {
     addDebugLog(`🍂 Error processing voice command: ${error.message}`);
     speakResponse("Sorry, I couldn't process that command. Please try again.");
@@ -338,7 +417,7 @@ async function handleNavigationCommand(command) {
     if (url.includes('.') && !url.includes(' ')) {
       url = 'https://' + url;
       addDebugLog(`🌐 Added https:// protocol: ${url}`);
-    } else {
+  } else {
       // Treat as search query
       url = `https://www.google.com/search?q=${encodeURIComponent(destination)}`;
       addDebugLog(`🔍 Treating as search query: ${url}`);
@@ -354,7 +433,7 @@ async function handleNavigationCommand(command) {
     await chrome.tabs.update(tab.id, { url: url });
     addDebugLog('✅ Navigation successful');
     updateState('ready');
-  } catch (error) {
+    } catch (error) {
     addDebugLog(`🍂 Navigation error: ${error.message}`);
     speakResponse("Sorry, I couldn't navigate to that destination.");
     updateState('ready');
@@ -450,7 +529,7 @@ function speakResponse(text) {
     utterance.pitch = 1.0;
     utterance.volume = 0.8;
     speechSynthesis.speak(utterance);
-  } else {
+    } else {
     addDebugLog('🍂 Speech synthesis not supported');
   }
 }
@@ -486,7 +565,11 @@ function updateState(state) {
         break;
       case 'ready':
       sherpaIcon.textContent = '○';
-      statusText.textContent = 'Ready to help';
+      if (microphonePermissionGranted) {
+        statusText.textContent = 'Mic working - Ready to help';
+      } else {
+        statusText.textContent = 'Ready to help';
+      }
         break;
     case 'error':
       sherpaIcon.textContent = '▲';
