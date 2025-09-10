@@ -1,113 +1,104 @@
-# Sherpa Chrome Extension
+# Sherpa 2 ("Apache") - Voice-First Assistant
 
-A Chrome extension that answers questions about any website by leveraging the Pathfinder API's Q&A capabilities.
+A ubiquitous voice-first assistant that gives users a sense of continuous support while browsing. Sherpa should feel like it's always "right there," listening and ready to help with navigation and on-page guidance.
 
-## Features
+## Core Features
 
-- **Ask questions**: Type any question about the current website
-- **Get instant answers**: Receive AI-powered answers based on site content
-- **Source attribution**: See which page the answer came from
-- **One-click navigation**: Go directly to the source page
-- **User feedback**: Help improve answer quality
-- **Minimal permissions**: Only requires access to current tab and Pathfinder API
+### Always Available
+- Accessible within one click or hotword ("Hey Sherpa") at any time
+- Minimal UI with a single, pulsating circle representing listening state
+- Persistent voice listener with low-power wake-word detection
 
-## How it works
+### Voice Commands
 
-1. **Click the extension** on any webpage
-2. **Ask a question** like "forgot clinic phone number" or "how to contact support"
-3. **Extension analyzes** the current website (crawls and indexes content)
-4. **Extension queries** the analyzed content to find the best answer
-5. **Get an answer** with source attribution
-6. **Navigate to source** if you want to see more details
-7. **Provide feedback** to help improve future answers
+#### Navigation
+- "Take me to [website]" - Navigate to a specific website
+- "Go to [domain]" - Navigate to a domain
+- "Navigate to [URL]" - Navigate to a specific URL
+
+#### On-Page Assistance
+- "Where is [element/text]" - Find and highlight elements on the current page
+- "Find [text]" - Search for text content on the page
+- "Show me [element]" - Locate specific page elements
+
+#### General
+- "Hey Sherpa" - Wake word to activate listening
+- "Help" - Get assistance information
+- Any other phrase - Fallback to Google search
+
+### Visual Feedback
+- **Idle**: Gray circle with "Click to activate"
+- **Listening**: Red pulsing circle with "Listening..."
+- **Processing**: Blue spinning circle with "Processing..."
+- **Ready**: Green circle with "Ready to help"
+- **Error**: Red triangle with "Error - Click to retry"
+
+### Debug Logging
+- **Real-time log**: Shows all voice interactions, commands, and system events
+- **Toggle button**: Small circle in top-right corner to expand/collapse log
+- **Drops down**: Log extends window height from 200px to 400px when expanded
+- **Copy functionality**: Copy entire log to clipboard for debugging
+- **Clear log**: Reset the log display
+- **Performance optimized**: Shows last 80 lines with throttled updates
+- **Rectangular design**: Fits comfortably in the 320x400px popup window
+
+## Technical Implementation
+
+### Voice Interface
+- Browser Speech Recognition API for voice input
+- Web Speech Synthesis API for voice output
+- Wake-word detection ("Hey Sherpa")
+- 10-second timeout for silence detection
+
+### Navigation Control
+- Programmatic control of browser tabs/URLs
+- Smart URL construction (adds https:// if missing)
+- Fallback to Google search for ambiguous queries
+
+### On-Page Assistance
+- DOM inspection to locate requested text or elements
+- Visual highlighting of found elements
+- Smooth scrolling to results
+- Search across text content, form elements, links, and images
+
+### Minimal UI
+- Compact 320x200px popup window (rectangular)
+- Pulsating circle with state transitions
+- Debug log drops down to extend window height when expanded
+- No complex UI elements beyond the listening indicator
 
 ## Installation
 
-### Development Installation
+1. Load the extension in Chrome Developer Mode
+2. Grant microphone permissions when prompted
+3. Click the Sherpa circle to activate
+4. Start using voice commands!
 
-1. Open Chrome and go to `chrome://extensions/`
-2. Enable "Developer mode" in the top right
-3. Click "Load unpacked"
-4. Select this `sherpa` directory
-5. The extension will appear in your toolbar
+## Usage Examples
 
-### Production Installation
+- "Hey Sherpa, take me to google.com"
+- "Find the search button on this page"
+- "Where is the login form?"
+- "Go to github.com"
+- "Show me the navigation menu"
 
-*Coming soon - will be available on the Chrome Web Store*
+## Browser Compatibility
 
-## API Integration
+- Chrome/Chromium-based browsers
+- Requires microphone permissions
+- Uses Web Speech APIs (not available in all browsers)
 
-The extension integrates with the Pathfinder API at:
-- **Production**: `https://pathfinder-bay-mu.vercel.app/api`
-- **Staging**: `https://<staging-domain>/api` (for development)
+## Architecture
 
-### API Endpoints Used
+- **popup.html/js**: Minimal UI and voice interface
+- **content.js**: On-page search and highlighting
+- **background.js**: Extension lifecycle and message routing
+- **permission.html/js**: Microphone permission handling
 
-- `POST /api/sherpa/v1/analyze` - Analyze the current website
-  - Sends: `{ start_url: string, user_id: string }`
-  - Returns: `{ mode: "cached"|"started", job_id: string, ... }`
+## Future Enhancements
 
-- `GET /api/sherpa/v1/jobs/{jobId}/status` - Poll analysis status
-  - Returns: `{ status: "queued"|"running"|"done"|"error", progress?: {...} }`
-
-- `POST /api/sherpa/v1/query` - Ask questions about the analyzed site
-  - Sends: `{ jobId: string, question: string }`
-  - Returns: `{ answer: string, sources: Array<{url, title, snippet}> }`
-
-## Permissions
-
-- `activeTab`: Access current tab URL
-- `scripting`: Inject content scripts
-- `storage`: Store local state
-- `https://pathfinder-bay-mu.vercel.app/*`: Access Pathfinder API
-
-## Privacy
-
-- Only sends the current tab's URL to Pathfinder
-- No personal data is collected or stored
-- Respects robots.txt and site policies
-- Data is not sold or shared
-
-## Development
-
-### File Structure
-
-```
-sherpa/
-├── manifest.json          # Extension manifest
-├── popup.html            # Extension popup UI
-├── popup.js              # Popup logic and API calls
-├── content.js            # Content script (minimal)
-├── content.css           # Content styles
-├── background.js         # Background service worker
-├── icons/                # Extension icons
-│   ├── icon16.png
-│   ├── icon48.png
-│   └── icon128.png
-└── README.md
-```
-
-### API Endpoints Used
-
-- `POST /analyze` - Start analysis or get cached results
-- `GET /jobs/{id}/status` - Poll job status
-- `GET /results/head` - Get top results
-- `POST /results/advance` - Get next alternative
-- `POST /feedback` - Submit user feedback
-
-## Version History
-
-### v1.0.0
-- Initial release
-- Basic navigation to best page
-- Alternative suggestions
-- User feedback collection
-- 15-minute caching
-
-## Support
-
-For issues or questions, please contact the development team.
-
----
-
-**Sherpa** - Your guide to the best pages on any website.
+- Context awareness across browsing sessions
+- More sophisticated wake-word detection
+- Custom voice commands
+- Integration with more web services
+- Accessibility improvements

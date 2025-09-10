@@ -1,1197 +1,61 @@
-// API Configuration
-const PATHFINDER_API_BASE = 'https://pathfinder-bay-mu.vercel.app/api';
+// Sherpa 2 (Apache) - Voice-First Assistant
+// Minimal voice interface with persistent listening
 
-// State
-let currentQuestion = '';
-let currentAnswer = null;
-let currentSource = null;
-let currentSiteId = null;
-let currentUrl = null;
-let currentDomain = null;
-let isScouted = false;
-let isScouting = false; // Track if scouting is in progress
-let mountaineeringUpdateInterval = null;
-
-// Voice recognition state
+// State management
 let recognition = null;
 let isListening = false;
 let isVoiceSupported = false;
 let microphonePermissionGranted = false;
-// Removed permissionIframe - using direct permission requests
+let currentState = 'idle'; // idle, listening, processing, ready, error
 
-// Voice recognition timeout and detection
-let voiceTimeout = null;
-let voiceStartTime = null;
-let lastTranscriptTime = null;
-let ummCount = 0;
-const VOICE_TIMEOUT_MS = 5000; // 5 seconds of silence
-const UMM_THRESHOLD = 3; // Stop after 3 "umm"s
+// DOM elements
+const sherpaCircle = document.getElementById('sherpa-circle');
+const sherpaIcon = document.getElementById('sherpa-icon');
+const statusText = document.getElementById('status-text');
 
-// Performance tracking
-const performanceMetrics = {
-  pageCheckTimes: [],
-  domainCheckTimes: []
-};
-
-// Smart timeout system
-const TIMEOUT_MS = 2000; // Increased to 2 seconds for better reliability
-
-// Log performance optimization
-let logBuffer = [];
-let logDisplayLimit = 50; // Show only last 50 lines
-let logUpdateInterval = null;
-
-// Adjust log display limit for performance
-function setLogDisplayLimit(limit) {
-  logDisplayLimit = Math.max(10, Math.min(200, limit)); // Between 10-200 lines
-  addDebugLog(`📊 Log display limit set to ${logDisplayLimit} lines`);
-  updateLogDisplay(); // Immediately update display
-}
-
-// Reduce log verbosity during high-activity periods
-function reduceLogVerbosity() {
-  logDisplayLimit = 25; // Show fewer lines during heavy activity
-  addDebugLog('📊 Reduced log verbosity for better performance');
-}
-
-// Restore normal log verbosity
-function restoreLogVerbosity() {
-  logDisplayLimit = 50; // Back to normal
-  addDebugLog('📊 Restored normal log verbosity');
-}
-
-// DOM Elements
-const questionSectionEl = document.getElementById('question-section');
-const questionInputEl = document.getElementById('question-input');
-const analyzeBtnEl = document.getElementById('analyze-btn');
-const queryBtnEl = document.getElementById('query-btn');
-const voiceBtnEl = document.getElementById('voice-btn');
-const statusEl = document.getElementById('status');
-const statusTextEl = document.getElementById('status-text');
-const resultEl = document.getElementById('result');
-const answerTextEl = document.getElementById('answer-text');
-const sourceUrlEl = document.getElementById('source-url');
-const sourceTitleEl = document.getElementById('source-title');
-const goToSourceBtnEl = document.getElementById('go-to-source-btn');
-const feedbackBtnEl = document.getElementById('feedback-btn');
-const feedbackEl = document.getElementById('feedback');
-const yesBtnEl = document.getElementById('yes-btn');
-const noBtnEl = document.getElementById('no-btn');
-const errorEl = document.getElementById('error');
-const errorTextEl = document.getElementById('error-text');
+// Debug log elements
 const debugEl = document.getElementById('debug');
-const debugHeaderEl = document.getElementById('debug-header');
 const debugContentEl = document.getElementById('debug-content');
+const debugHeaderEl = document.getElementById('debug-header');
 const copyLogBtnEl = document.getElementById('copy-log-btn');
 const clearLogBtnEl = document.getElementById('clear-log-btn');
-const testMicBtnEl = document.getElementById('test-mic-btn');
 const logToggleBtnEl = document.getElementById('log-toggle-btn');
+const logToggleIconEl = document.querySelector('.log-toggle-icon');
 
-// Initialize
+// Log management
+let logBuffer = [];
+let logUpdateInterval = null;
+const MAX_LOG_ENTRIES = 100;
+
+// Voice recognition timeout
+let voiceTimeout = null;
+const VOICE_TIMEOUT_MS = 10000; // 10 seconds of silence
+
+// Initialize on load
 document.addEventListener('DOMContentLoaded', async () => {
-  analyzeBtnEl.addEventListener('click', handleAnalyze);
-  queryBtnEl.addEventListener('click', handleQuery);
-  voiceBtnEl.addEventListener('click', handleVoiceInput);
-  copyLogBtnEl.addEventListener('click', copyDebugLog);
-  clearLogBtnEl.addEventListener('click', clearDebugLog);
-  testMicBtnEl.addEventListener('click', testMicrophonePermission);
-  debugHeaderEl.addEventListener('click', toggleDebugLog);
-  logToggleBtnEl.addEventListener('click', toggleLogVisibility);
+  addDebugLog('🌲 Sherpa 2 (Apache) - Voice-First Assistant loaded');
   
-  // Add Enter key support
-  questionInputEl.addEventListener('keypress', handleEnterKey);
+  // Set up debug log event handlers
+  setupDebugLogHandlers();
   
-  // Add spacebar support for voice input
-  document.addEventListener('keydown', handleSpaceKey);
-  
-  // Add click support for source URL
-  sourceUrlEl.addEventListener('click', handleSourceClick);
+  // Initialize log as collapsed
+  debugEl.classList.add('collapsed');
+  document.body.classList.remove('log-expanded');
+  logToggleIconEl.textContent = '+';
   
   // Initialize voice recognition
-  initializeVoiceRecognition();
+  await initializeVoiceRecognition();
   
-  // Load persistent state
-  await loadPersistentState();
+  // Set up click handler
+  sherpaCircle.addEventListener('click', handleSherpaClick);
   
-  // Show loading message while checking website status
-  showStatus('Checking if we\'ve been here before', 'working');
-  
-  // Check if current website is already scouted
-  await checkWebsiteStatus();
-  
-  // Set up tab change listener for persistent window
-  setupTabChangeListener();
-  
-  addDebugLog('🌿 Sherpa guide ready - ready to scout trails');
+  // Update initial state
+  updateState('idle');
 });
 
-// Load persistent state from storage (for reference only - real-time check will override)
-async function loadPersistentState() {
-  try {
-    const result = await chrome.storage.local.get(['sherpaState']);
-    if (result.sherpaState) {
-      const state = result.sherpaState;
-      addDebugLog(`🌿 Found cached state for: ${state.url} (will verify with real-time check)`);
-    } else {
-      addDebugLog(`🌿 No cached state found, will perform real-time check`);
-    }
-  } catch (error) {
-    addDebugLog(`🍂 Failed to load persistent state: ${error.message}`);
-  }
-}
-
-// Save persistent state to storage
-async function savePersistentState() {
-  try {
-    const state = {
-      siteId: currentSiteId,
-      url: currentUrl,
-      domain: currentDomain,
-      isScouted: isScouted,
-      timestamp: Date.now()
-    };
-    await chrome.storage.local.set({ sherpaState: state });
-    addDebugLog(`🌿 Saved state for website: ${currentUrl}`);
-  } catch (error) {
-    addDebugLog(`🍂 Failed to save persistent state: ${error.message}`);
-  }
-}
-
-// Clear persistent state
-async function clearPersistentState() {
-  try {
-    await chrome.storage.local.remove(['sherpaState']);
-    addDebugLog('🌿 Cleared persistent state');
-  } catch (error) {
-    addDebugLog(`🍂 Failed to clear persistent state: ${error.message}`);
-  }
-}
-
-// Check if current website is already scouted (CACHE-ONLY VERSION)
-async function checkWebsiteStatus() {
-  try {
-    // Get current tab URL
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const tabUrl = tab.url;
-    
-    if (!tabUrl || tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://')) {
-      showError('Sherpa can only scout regular websites');
-      return;
-    }
-
-    currentUrl = tabUrl;
-    currentDomain = extractDomain(tabUrl);
-    
-    addDebugLog(`Checking cached state for: ${currentUrl}`);
-    
-    // Show loading status with cycling mountaineering messages
-    showStatus('Checking if we\'ve been here before...', 'working');
-    startMountaineeringCheckUpdates();
-    
-    // Load cached state
-    const result = await chrome.storage.local.get(['sherpaState']);
-    
-    if (result.sherpaState && 
-        result.sherpaState.url === currentUrl && 
-        result.sherpaState.isScouted) {
-      
-      addDebugLog(`Found cached state for: ${currentUrl} - showing query interface`);
-      currentSiteId = result.sherpaState.siteId;
-      isScouted = true;
-      stopMountaineeringUpdates(); // Stop the cycling check messages
-      hideStatus();
-      showQueryButton();
-      return;
-    }
-    
-    // No cached state or different URL - show scout button
-    addDebugLog(`No cached state found for: ${currentUrl} - showing scout button`);
-    stopMountaineeringUpdates(); // Stop the cycling check messages
-    hideStatus();
-    showScoutButton();
-    
-  } catch (error) {
-    addDebugLog(`Website check failed: ${error.message}`);
-    stopMountaineeringUpdates(); // Stop the cycling check messages
-    showError('Failed to check website status');
-    hideStatus();
-    showScoutButton();
-  }
-}
-
-// Helper function: Direct page check
-async function checkPageDirect(url) {
-  const response = await fetch('https://pathfinder-bay-mu.vercel.app/api/sherpa/v1/check', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      url: url,
-      checkVectorIndex: true,
-      checkSpecificPath: true
-    })
-  });
-  
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-  
-  return await response.json();
-}
-
-// Helper function: Domain-only check
-async function checkDomainOnly(domain) {
-  const response = await fetch('https://pathfinder-bay-mu.vercel.app/api/sherpa/v1/check', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      url: `https://${domain}`,
-      checkVectorIndex: true,
-      checkSpecificPath: false
-    })
-  });
-  
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-  
-  return await response.json();
-}
-
-// Helper function: Log performance metrics
-function logPerformanceMetrics() {
-  if (performanceMetrics.pageCheckTimes.length > 0) {
-    const avgPageTime = performanceMetrics.pageCheckTimes.reduce((a, b) => a + b, 0) / performanceMetrics.pageCheckTimes.length;
-    addDebugLog(`Average page check time: ${avgPageTime.toFixed(0)}ms`);
-  }
-  if (performanceMetrics.domainCheckTimes.length > 0) {
-    const avgDomainTime = performanceMetrics.domainCheckTimes.reduce((a, b) => a + b, 0) / performanceMetrics.domainCheckTimes.length;
-    addDebugLog(`Average domain check time: ${avgDomainTime.toFixed(0)}ms`);
-  }
-}
-
-// Clear website state when it's no longer scouted
-async function clearWebsiteState() {
-  addDebugLog('🌿 Clearing website state - website no longer scouted');
-  
-  // Reset all state variables
-  currentSiteId = null;
-  isScouted = false;
-  currentAnswer = null;
-  currentSource = null;
-  
-  // Clear persistent state
-  await clearPersistentState();
-}
-
-// Mountaineering options for "Checking if we've been here before"
-const mountaineeringCheckMessages = [
-  'Checking if we\'ve been here before...',
-  'Consulting the trail register...',
-  'Looking for familiar landmarks...',
-  'Checking our route history...',
-  'Scanning for previous waypoints...',
-  'Reviewing the expedition log...',
-  'Checking the summit register...',
-  'Looking for our trail markers...',
-  'Consulting the climbing journal...',
-  'Checking for previous ascents...',
-  'Reviewing the route beta...',
-  'Looking for familiar terrain...',
-  'Checking the guidebook notes...',
-  'Scanning for known paths...',
-  'Consulting the mountain lore...',
-  'Checking our climbing history...',
-  'Looking for previous campsites...',
-  'Reviewing the approach notes...',
-  'Checking the descent route...',
-  'Consulting the peak register...'
-];
-
-// Start mountaineering status updates during exploration
-function startMountaineeringUpdates() {
-  const mountaineeringMessages = [
-    'Turning the corner...',
-    'Climbing up the path...',
-    'Navigating through the undergrowth...',
-    'Checking the trail markers...',
-    'Ascending the ridge...',
-    'Crossing the stream...',
-    'Following the winding trail...',
-    'Reaching the next waypoint...',
-    'Scouting ahead...',
-    'Making steady progress...',
-    'Finding the best route...',
-    'Pushing through the thicket...',
-    'Gaining elevation...',
-    'Spotting landmarks...',
-    'Adjusting the compass...',
-    'Taking in the view...',
-    'Plotting the next course...',
-    'Moving through the forest...',
-    'Checking the map...',
-    'Pressing onward...'
-  ];
-  
-  let messageIndex = 0;
-  
-  mountaineeringUpdateInterval = setInterval(() => {
-    if (messageIndex < mountaineeringMessages.length) {
-      const message = mountaineeringMessages[messageIndex];
-      showStatus(message, 'working');
-      addDebugLog(`🏔️ Mountaineering update: ${message}`);
-      messageIndex++;
-    } else {
-      // Cycle through messages again
-      messageIndex = 0;
-    }
-  }, 3000); // Update every 3 seconds
-}
-
-// Stop mountaineering status updates
-function stopMountaineeringUpdates() {
-  if (mountaineeringUpdateInterval) {
-    clearInterval(mountaineeringUpdateInterval);
-    mountaineeringUpdateInterval = null;
-    addDebugLog('🏔️ Stopped mountaineering updates');
-  }
-}
-
-// Start mountaineering check status updates
-function startMountaineeringCheckUpdates() {
-  let messageIndex = 0;
-  
-  mountaineeringUpdateInterval = setInterval(() => {
-    if (messageIndex < mountaineeringCheckMessages.length) {
-      const message = mountaineeringCheckMessages[messageIndex];
-      showStatus(message, 'working');
-      addDebugLog(`🏔️ Check update: ${message}`);
-      messageIndex++;
-    } else {
-      // Cycle through messages again
-      messageIndex = 0;
-    }
-  }, 2000); // Update every 2 seconds for check messages
-}
-
-// Handle Enter key press
-function handleEnterKey(event) {
-  if (event.key === 'Enter') {
-    event.preventDefault(); // Prevent form submission
-    
-    // Don't allow Enter key during scouting (but allow during check phase)
-    if (isScouting) {
-      addDebugLog('⌨️ Enter key pressed but ignored - currently scouting');
-      return;
-    }
-    
-    // Check which action should be active based on current state
-    if (!analyzeBtnEl.classList.contains('hidden') && !analyzeBtnEl.disabled) {
-      // Scout button is visible and enabled - trigger scouting
-      addDebugLog('⌨️ Enter key pressed - triggering scout trail');
-      handleAnalyze();
-    } else if (isScouted && !queryBtnEl.classList.contains('hidden') && !queryBtnEl.disabled) {
-      // Query button is visible and enabled - trigger query
-      addDebugLog('⌨️ Enter key pressed - triggering ask question');
-      handleQuery();
-    }
-  }
-}
-
-// Handle Space key press for scouting or starting voice input
-function handleSpaceKey(event) {
-  if (event.code === 'Space') {
-    // Prevent default space behavior (scrolling)
-    event.preventDefault();
-    
-    // Check if scout button is available
-    if (!analyzeBtnEl.classList.contains('hidden') && !analyzeBtnEl.disabled) {
-      addDebugLog('⌨️ Space key pressed - triggering scout trail');
-      handleAnalyze();
-      return;
-    }
-    
-    // Check if voice input can be started (only start, never stop)
-    if (isScouted && !queryBtnEl.classList.contains('hidden') && isVoiceSupported && isVoiceButtonVisible() && !isListening) {
-      addDebugLog('⌨️ Space key pressed - starting voice input');
-      handleVoiceInput();
-      return;
-    }
-    
-    // No action available
-    addDebugLog('⌨️ Space key pressed but no action available (scout: ' + (!analyzeBtnEl.classList.contains('hidden') && !analyzeBtnEl.disabled) + ', voice start: ' + (isScouted && !queryBtnEl.classList.contains('hidden') && isVoiceSupported && isVoiceButtonVisible() && !isListening) + ')');
-  }
-}
-
-// Handle source URL click
-function handleSourceClick(event) {
-  event.preventDefault(); // Prevent default anchor behavior
-  const url = sourceUrlEl.href;
-  if (url && url !== '#') {
-    addDebugLog(`🌿 Opening source URL: ${url}`);
-    chrome.tabs.create({ url: url });
-  }
-}
-
-// Hide scout button and show query section with smooth animation
-function hideScoutButton() {
-  addDebugLog('🌿 Hiding scout button with animation');
-  
-  // Animate out scout button
-  analyzeBtnEl.classList.add('hidden');
-  
-  // Wait for animation to complete, then show query section
-  setTimeout(() => {
-    showQueryButton();
-  }, 300);
-}
-
-// Show scout button with smooth animation
-async function showScoutButton() {
-  addDebugLog('🌿 Showing scout button with animation');
-  
-  // Reset state
-  currentSiteId = null;
-  isScouted = false;
-  isScouting = false; // Reset scouting state
-  currentAnswer = null;
-  currentSource = null;
-  
-  // Hide ALL other elements first with smooth transitions
-  queryBtnEl.classList.add('hidden');
-  smoothHide(questionInputEl);
-  resultEl.classList.add('hidden');
-  errorEl.classList.add('hidden');
-  
-  // Update voice button visibility (will hide it since no entry field)
-  updateVoiceButtonVisibility();
-  
-  // Hide loading message and show scout button
-  hideStatus();
-  
-  // Re-enable and show the scout button
-  analyzeBtnEl.disabled = false;
-  analyzeBtnEl.classList.remove('hidden');
-  
-  // Debug: Check if button is visible
-  addDebugLog(`🌿 Scout button classes: ${analyzeBtnEl.className}`);
-  addDebugLog(`🌿 Question section classes: ${questionSectionEl.className}`);
-  addDebugLog(`🌿 Scout button display: ${window.getComputedStyle(analyzeBtnEl).display}`);
-}
-
-// Show query button and input with smooth animation
-function showQueryButton() {
-  // Don't show query interface if scouting is in progress
-  if (isScouting) {
-    addDebugLog('🌿 Not showing query interface - scouting in progress');
-    return;
-  }
-  
-  addDebugLog('🌿 Showing query section with animation');
-  
-  // Show query interface with smooth transitions
-  queryBtnEl.classList.remove('hidden');
-  questionSectionEl.classList.remove('hidden');
-  smoothShow(questionInputEl);
-  
-  // Update voice button visibility based on simple rule
-  updateVoiceButtonVisibility();
-  
-  // Request microphone permission if needed
-  if (isVoiceSupported && !microphonePermissionGranted) {
-    requestMicrophonePermission();
-  } else if (isVoiceSupported && microphonePermissionGranted) {
-    // Microphone is already ready, ensure voice button is shown
-    addDebugLog('🎤 Microphone already ready - ensuring voice button is visible in query mode');
-    if (voiceBtnEl) {
-      voiceBtnEl.style.display = 'flex';
-      voiceBtnEl.classList.remove('hidden');
-    }
-  }
-}
-
-// Show status with smooth animation
-function showStatus(message, type) {
-  statusTextEl.textContent = message;
-  statusEl.className = `status ${type}`;
-  statusEl.classList.remove('hidden', 'fade-out');
-  
-  // Add loading animation for working status
-  if (type === 'working') {
-    statusTextEl.classList.add('loading-dots');
-  } else {
-    statusTextEl.classList.remove('loading-dots');
-  }
-  
-  addDebugLog(`🌿 Trail status: ${message}`);
-}
-
-// Hide status with smooth fade-out animation
-function hideStatus() {
-  statusEl.classList.add('fade-out');
-  setTimeout(() => {
-    statusEl.classList.add('hidden');
-    statusEl.classList.remove('fade-out');
-  }, 300); // Match CSS transition duration
-}
-
-
-// Toggle debug log visibility
-function toggleDebugLog() {
-  debugContentEl.classList.toggle('hidden');
-  addDebugLog('🌿 Trail log toggled');
-}
-
-// Toggle complete log visibility (hide/show the entire debug section)
-function toggleLogVisibility() {
-  debugEl.classList.toggle('completely-hidden');
-  logToggleBtnEl.classList.toggle('hidden');
-  
-  // Update the icon
-  const icon = logToggleBtnEl.querySelector('.log-toggle-icon');
-  if (debugEl.classList.contains('completely-hidden')) {
-    icon.textContent = '+';
-    addDebugLog('🌿 Trail log completely hidden');
-  } else {
-    icon.textContent = '−';
-    addDebugLog('🌿 Trail log shown');
-  }
-}
-
-// Set up tab change listener for persistent window
-function setupTabChangeListener() {
-  // Listen for tab updates (navigation, URL changes)
-  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    // Only respond to completed navigation on the active tab
-    if (changeInfo.status === 'complete' && tab.active) {
-      addDebugLog(`🌿 Tab navigation detected: ${tab.url}`);
-      
-      // Add smooth transition effect
-      showStatus('Updating trail view...', 'working');
-      
-      // Small delay for smooth transition
-      setTimeout(async () => {
-        // Update current URL and domain
-        currentUrl = tab.url;
-        currentDomain = extractDomain(tab.url);
-        
-        // Check if the new page is scouted
-        await checkWebsiteStatus();
-        
-        // Hide the updating status
-        hideStatus();
-      }, 300);
-    }
-  });
-  
-  // Listen for tab activation (switching between tabs)
-  chrome.tabs.onActivated.addListener(async (activeInfo) => {
-    try {
-      const tab = await chrome.tabs.get(activeInfo.tabId);
-      addDebugLog(`🌿 Tab switched to: ${tab.url}`);
-      
-      // Add smooth transition effect
-      showStatus('Switching trail view...', 'working');
-      
-      // Small delay for smooth transition
-      setTimeout(async () => {
-        // Update current URL and domain
-        currentUrl = tab.url;
-        currentDomain = extractDomain(tab.url);
-        
-        // Check if the new page is scouted
-        await checkWebsiteStatus();
-        
-        // Hide the updating status
-        hideStatus();
-      }, 300);
-    } catch (error) {
-      addDebugLog(`🍂 Error handling tab switch: ${error.message}`);
-    }
-  });
-}
-
-// Show result with smooth animation
-function showResult(answer, sources) {
-  addDebugLog('🌿 Showing result with animation');
-  addDebugLog(`🌿 Sources received: ${sources ? sources.length : 0} sources`);
-  if (sources && sources.length > 0) {
-    addDebugLog(`🌿 First source: ${JSON.stringify(sources[0])}`);
-  }
-  
-  // Hide status first
-  hideStatus();
-  
-  // Show result
-  setTimeout(() => {
-    resultEl.classList.remove('hidden');
-    addDebugLog('🌿 Result section shown');
-    
-    // Check source section visibility
-    const sourceSection = resultEl.querySelector('.source-section');
-    if (sourceSection) {
-      addDebugLog(`🌿 Source section display: "${window.getComputedStyle(sourceSection).display}"`);
-      addDebugLog(`🌿 Source section visibility: "${window.getComputedStyle(sourceSection).visibility}"`);
-    } else {
-      addDebugLog('🌿 Source section not found!');
-    }
-    
-    // Check if answer is "I don't know" or similar - hide answer section, show only trail marker
-    if (answer.toLowerCase().includes("i don't know") || 
-        answer.toLowerCase().includes("i do not know") ||
-        answer.toLowerCase().includes("i'm not sure") ||
-        answer.toLowerCase().includes("i am not sure") ||
-        answer.toLowerCase().includes("unable to find") ||
-        answer.toLowerCase().includes("no information found")) {
-      
-      // Hide the answer section but show the trail marker
-      const answerSection = resultEl.querySelector('.answer-section');
-      if (answerSection) {
-        answerSection.style.display = 'none'; // Comment out instead of remove
-      }
-      
-      // Show trail marker with helpful message
-      if (sources.length > 0) {
-        const source = sources[0];
-        addDebugLog(`🌿 Setting trail marker URL (no answer): ${source.url}`);
-        
-        try {
-          if (!sourceTitleEl) {
-            addDebugLog('🍂 sourceTitleEl not found!');
-            return;
-          }
-          if (!sourceUrlEl) {
-            addDebugLog('🍂 sourceUrlEl not found!');
-            return;
-          }
-          
-          sourceTitleEl.textContent = 'Trail Marker:';
-          sourceUrlEl.textContent = source.url;
-          sourceUrlEl.href = source.url; // Make it a proper link
-          
-          addDebugLog(`🌿 Source URL element text: "${sourceUrlEl.textContent}"`);
-          addDebugLog(`🌿 Source URL element href: "${sourceUrlEl.href}"`);
-          addDebugLog(`🌿 Source URL element display: "${window.getComputedStyle(sourceUrlEl).display}"`);
-          addDebugLog(`🌿 Source URL element visibility: "${window.getComputedStyle(sourceUrlEl).visibility}"`);
-          
-          if (goToSourceBtnEl) {
-            goToSourceBtnEl.onclick = () => {
-              chrome.tabs.create({ url: source.url });
-            };
-          }
-        } catch (error) {
-          addDebugLog(`🍂 Error setting trail marker: ${error.message}`);
-        }
-      } else {
-        addDebugLog('🌿 No sources available for trail marker (no answer)');
-      }
-    } else {
-      // Normal answer - show both answer and trail marker
-      const answerSection = resultEl.querySelector('.answer-section');
-      if (answerSection) {
-        answerSection.style.display = 'block'; // Make sure it's visible
-      }
-      
-      answerTextEl.textContent = answer;
-      
-      if (sources.length > 0) {
-        const source = sources[0];
-        addDebugLog(`🌿 Setting trail marker URL (with answer): ${source.url}`);
-        
-        try {
-          if (!sourceTitleEl) {
-            addDebugLog('🍂 sourceTitleEl not found!');
-            return;
-          }
-          if (!sourceUrlEl) {
-            addDebugLog('🍂 sourceUrlEl not found!');
-            return;
-          }
-          
-          sourceTitleEl.textContent = 'Trail Marker:';
-          sourceUrlEl.textContent = source.url;
-          sourceUrlEl.href = source.url; // Make it a proper link
-          
-          addDebugLog(`🌿 Source URL element text: "${sourceUrlEl.textContent}"`);
-          addDebugLog(`🌿 Source URL element href: "${sourceUrlEl.href}"`);
-          addDebugLog(`🌿 Source URL element display: "${window.getComputedStyle(sourceUrlEl).display}"`);
-          addDebugLog(`🌿 Source URL element visibility: "${window.getComputedStyle(sourceUrlEl).visibility}"`);
-          
-          if (goToSourceBtnEl) {
-            goToSourceBtnEl.onclick = () => {
-              chrome.tabs.create({ url: source.url });
-            };
-          }
-        } catch (error) {
-          addDebugLog(`🍂 Error setting trail marker: ${error.message}`);
-        }
-      } else {
-        addDebugLog('🌿 No sources available for trail marker (with answer)');
-      }
-    }
-  }, 200);
-}
-
-// Show error with smooth animation
-function showError(message) {
-  errorTextEl.textContent = message;
-  errorEl.classList.remove('hidden');
-  addDebugLog(`🍂 Error: ${message}`);
-  
-  // Auto-hide error after 5 seconds
-  setTimeout(() => {
-    errorEl.classList.add('hidden');
-  }, 5000);
-}
-
-// Hide error with smooth animation
-function hideError() {
-  errorEl.classList.add('hidden');
-}
-
-// Clear display for new query
-function clearDisplayForNewQuery() {
-  addDebugLog('🌿 Clearing display for new query');
-  
-  // Clear the question input
-  if (questionInputEl) {
-    questionInputEl.value = '';
-  }
-  
-  // Hide result section
-  if (resultEl) {
-    resultEl.classList.add('hidden');
-  }
-  
-  // Reset current answer and source
-  currentAnswer = null;
-  currentSource = null;
-}
-
-async function handleAnalyze() {
-  // Prevent multiple simultaneous scouting operations
-  if (isScouting) {
-    addDebugLog('🌿 Scouting already in progress - ignoring duplicate request');
-    return;
-  }
-  
-  try {
-    // Set scouting state
-    isScouting = true;
-    
-    // Stop any existing mountaineering updates
-    stopMountaineeringUpdates();
-    
-    // IMMEDIATELY disable the scout button to prevent double-clicks and race conditions
-    analyzeBtnEl.disabled = true;
-    analyzeBtnEl.classList.add('hidden');
-    smoothHide(questionInputEl);
-    queryBtnEl.classList.add('hidden');
-    
-    // Update voice button visibility (will hide it since no entry field)
-    updateVoiceButtonVisibility();
-    
-    addDebugLog('🌲 Starting trail reconnaissance...');
-    showStatus('Scouting the trail...', 'working');
-    
-    // Get current tab URL
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const currentUrl = tab.url;
-    
-    addDebugLog(`🍃 Current trail location: ${currentUrl}`);
-    
-    if (!currentUrl || currentUrl.startsWith('chrome://') || currentUrl.startsWith('chrome-extension://')) {
-      throw new Error('Cannot scout this trail. Please navigate to a website first.');
-    }
-    
-    // Extract domain from URL
-    const domain = extractDomain(currentUrl);
-    currentDomain = domain;
-    addDebugLog(`🌿 Trail base camp: ${domain}`);
-    
-    // OPTIMIZED: Check if specific URL path already exists (faster than URL check)
-    addDebugLog('🍃 Checking if specific URL path already mapped...');
-    const checkResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        url: currentUrl,  // Check the specific URL path
-        checkVectorIndex: true,  // Check if embeddings exist
-        checkSpecificPath: true  // Flag to indicate we want path-specific checking
-      }),
-    });
-    
-    if (checkResponse.ok) {
-      const checkData = await checkResponse.json();
-      addDebugLog(`🌿 Check response: ${checkData.exists ? 'Found' : 'Not found'} (${checkData.pages?.length || 0} pages)`);
-      
-      if (checkData.exists && checkData.pages && checkData.pages.length > 0) {
-        addDebugLog('🌿 Specific URL path already mapped with waypoints');
-        currentSiteId = checkData.siteId;
-        isScouted = true;
-        isScouting = false; // Reset scouting state
-        
-        // Stop any ongoing mountaineering updates
-        stopMountaineeringUpdates();
-        
-        // Clear the scouting status
-        hideStatus();
-        
-        await savePersistentState();
-        
-        // Show success message and query interface (like normal completion)
-        hideScoutButton();
-        showStatus('Trail scouted! Ready for your questions.', 'success');
-        return;
-      }
-    }
-    
-    // Trail doesn't exist or has no waypoints, need to create and explore
-    addDebugLog('🌳 Trail needs exploration, setting up base camp...');
-    
-    // Create site first
-    const createSiteResponse = await fetch(`${PATHFINDER_API_BASE}/site`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        domain: domain,
-        startUrl: currentUrl,
-      }),
-    });
-    
-    if (!createSiteResponse.ok) {
-      const errorText = await createSiteResponse.text();
-      addDebugLog(`🍂 Base camp setup error: HTTP ${createSiteResponse.status} - ${errorText}`);
-      throw new Error(`Failed to set up base camp: HTTP ${createSiteResponse.status} - ${errorText}`);
-    }
-    
-    const siteData = await createSiteResponse.json();
-    addDebugLog(`🌿 Base camp established: Site ID ${siteData.id} for ${siteData.domain}`);
-    currentSiteId = siteData.id;
-    
-    // Now start exploring using the streaming crawl API
-    addDebugLog('🌱 Starting trail exploration...');
-    showStatus('Exploring the trail... This may take a minute.', 'working');
-    
-    // Reduce log verbosity during heavy crawling activity
-    reduceLogVerbosity();
-    
-    // Hide input during scouting with smooth transitions
-    smoothHide(questionInputEl);
-    queryBtnEl.classList.add('hidden');
-    
-    // Update voice button visibility (will hide it since no entry field)
-    updateVoiceButtonVisibility();
-    
-    // Start mountaineering status updates after 5 seconds
-    const statusUpdateInterval = setTimeout(() => {
-      startMountaineeringUpdates();
-    }, 5000);
-    
-    // Use the streaming crawl endpoint which is more reliable
-    const crawlUrl = `${PATHFINDER_API_BASE}/crawl/stream?siteId=${currentSiteId}&startUrl=${encodeURIComponent(currentUrl)}`;
-    addDebugLog(`🍃 Exploration route: ${crawlUrl}`);
-    
-    try {
-      const response = await fetch(crawlUrl);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        addDebugLog(`🍂 Exploration error: HTTP ${response.status} - ${errorText}`);
-        throw new Error(`Trail exploration failed: HTTP ${response.status} - ${errorText}`);
-      }
-      
-      // Read the stream
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              addDebugLog(`🦋 Trail progress: ${data.type} - ${data.message || data.url || ''}`);
-              
-              if (data.type === 'done') {
-                addDebugLog('🌿 Trail exploration completed successfully');
-                stopMountaineeringUpdates(); // Stop the mountaineering updates
-                restoreLogVerbosity(); // Restore normal log verbosity
-                isScouted = true;
-                isScouting = false; // Reset scouting state
-                await savePersistentState();
-                
-                hideScoutButton();
-                showStatus('Trail scouted! Ready for your questions.', 'success');
-                return;
-              } else if (data.type === 'status' && data.message.includes('error')) {
-                stopMountaineeringUpdates(); // Stop updates on error too
-                restoreLogVerbosity(); // Restore normal log verbosity
-                isScouting = false; // Reset scouting state
-                throw new Error(`Trail exploration error: ${data.message}`);
-              }
-            } catch (e) {
-              // Ignore parsing errors for non-JSON lines
-            }
-          }
-        }
-      }
-      
-    } catch (error) {
-      addDebugLog(`🍂 Trail exploration stream error: ${error.message}`);
-      stopMountaineeringUpdates(); // Stop updates on stream error
-      restoreLogVerbosity(); // Restore normal log verbosity
-      isScouting = false; // Reset scouting state
-      throw error;
-    }
-    
-  } catch (error) {
-    console.error('Trail scouting error:', error);
-    addDebugLog(`🍂 Trail scouting error: ${error.message}`);
-    stopMountaineeringUpdates(); // Stop updates on any error
-    restoreLogVerbosity(); // Restore normal log verbosity
-    isScouting = false; // Reset scouting state
-    
-    // Re-enable the scout button on error
-    analyzeBtnEl.disabled = false;
-    analyzeBtnEl.classList.remove('hidden');
-    
-    showError(`Trail scouting failed: ${error.message}`);
-  }
-}
-
-async function handleQuery() {
-  try {
-    const question = questionInputEl.value.trim();
-    if (!question) {
-      showError('Please ask Sherpa a question');
-      return;
-    }
-    
-    if (!currentSiteId || !isScouted) {
-      showError('Please scout the trail first');
-      return;
-    }
-    
-    // Double-check that the website is still scouted (real-time verification)
-    addDebugLog('🌿 Verifying website is still scouted before query...');
-    const verifyResponse = await fetch(`${PATHFINDER_API_BASE}/sherpa/v1/check`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        url: currentUrl,  // Check the specific URL path
-        checkVectorIndex: true,
-        checkSpecificPath: true  // Flag to indicate we want path-specific checking
-      }),
-    });
-    
-    if (verifyResponse.ok) {
-      const verifyData = await verifyResponse.json();
-      if (!verifyData.exists || !verifyData.pages || verifyData.pages.length === 0) {
-        addDebugLog('🍂 Website no longer scouted - clearing state and showing scout button');
-        await clearWebsiteState();
-        await showScoutButton();
-        showError('Trail has been cleared. Please scout the trail again.');
-        return;
-      }
-    } else {
-      addDebugLog('🍂 Verification failed - treating as not scouted');
-      await clearWebsiteState();
-      await showScoutButton();
-      showError('Unable to verify trail status. Please scout the trail again.');
-      return;
-    }
-    
-    addDebugLog(`🐦 Asking Sherpa: "${question}"`);
-    
-    // OPTIMIZED: Try Pathfinder's native fast endpoints first
-    try {
-      addDebugLog('🌿 Step 1: Using Pathfinder native search...');
-      
-      // Try Pathfinder's native search endpoint (likely fastest)
-      const searchResponse = await fetch(`${PATHFINDER_API_BASE}/search`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          siteId: currentSiteId,
-          query: question,
-          limit: 3,
-          useVectorSearch: true,  // Enable vector search if available
-          similarityThreshold: 0.7,
-        }),
-      });
-      
-      if (searchResponse.ok) {
-        const searchData = await searchResponse.json();
-        addDebugLog(`🌿 Pathfinder search: ${searchData.results?.length || 0} relevant pages found`);
-        
-        if (searchData.results && searchData.results.length > 0) {
-          showStatus('Found relevant pages, generating answer...', 'working');
-          
-          // Use Pathfinder's native query with pre-ranked results
-          const queryResponse = await fetch(`${PATHFINDER_API_BASE}/query`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              siteId: currentSiteId,
-              question: question,
-              // Pass pre-ranked results for faster generation
-              context: searchData.results.slice(0, 2).map(r => ({ 
-                url: r.url, 
-                title: r.title,
-                relevance: r.relevance || r.similarity 
-              })),
-              usePreRankedResults: true
-            }),
-          });
-          
-          if (queryResponse.ok) {
-            const data = await queryResponse.json();
-            addDebugLog(`🌿 Pathfinder-optimized response: Answer generated (${data.sources?.length || 0} sources)`);
-            
-            currentAnswer = data.answer;
-            currentSource = data.sources && data.sources.length > 0 ? data.sources[0] : null;
-            
-            showResult(data.answer, data.sources || []);
-            showStatus("Sherpa's found a spot!", 'success');
-            return;
-          }
-        }
-      }
-    } catch (pathfinderError) {
-      addDebugLog(`🍂 Pathfinder native search failed, trying Sherpa endpoints: ${pathfinderError.message}`);
-    }
-    
-    // Fallback: Try Sherpa's vector search
-    try {
-      addDebugLog('🌿 Step 2: Using Sherpa vector search...');
-      showStatus('Using vector embeddings...', 'working');
-      
-      const vectorResponse = await fetch(`${PATHFINDER_API_BASE}/vector-search`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          siteId: currentSiteId,
-          query: question,
-          limit: 3,
-          useEmbeddings: true,
-          similarityThreshold: 0.7,
-        }),
-      });
-      
-      if (vectorResponse.ok) {
-        const vectorData = await vectorResponse.json();
-        addDebugLog(`🌿 Vector search: ${vectorData.results?.length || 0} relevant pages found`);
-        
-        if (vectorData.results && vectorData.results.length > 0) {
-          showStatus('Found relevant pages, generating answer...', 'working');
-          
-          const queryResponse = await fetch(`${PATHFINDER_API_BASE}/query`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              siteId: currentSiteId,
-              question: question,
-              context: vectorData.results.slice(0, 2).map(r => ({ 
-                url: r.url, 
-                title: r.title,
-                similarity: r.similarity 
-              })),
-            }),
-          });
-          
-          if (queryResponse.ok) {
-            const data = await queryResponse.json();
-            addDebugLog(`🌿 Vector-optimized response: Answer generated (${data.sources?.length || 0} sources)`);
-            
-            currentAnswer = data.answer;
-            currentSource = data.sources && data.sources.length > 0 ? data.sources[0] : null;
-            
-            showResult(data.answer, data.sources || []);
-            showStatus("Sherpa's found a spot!", 'success');
-            return;
-          }
-        }
-      }
-    } catch (vectorError) {
-      addDebugLog(`🍂 Vector search failed, using standard query: ${vectorError.message}`);
-    }
-    
-    // Final fallback: Standard query
-    addDebugLog('🌿 Final fallback: Using standard query...');
-    showStatus('Generating answer...', 'working');
-    
-    const response = await fetch(`${PATHFINDER_API_BASE}/query`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        siteId: currentSiteId,
-        question: question,
-      }),
-    });
-    
-    addDebugLog(`🌊 Sherpa response status: ${response.status}`);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      addDebugLog(`🍂 Sherpa response error: HTTP ${response.status} - ${errorText}`);
-      throw new Error(`Sherpa consultation failed: HTTP ${response.status} - ${errorText}`);
-    }
-    
-    const data = await response.json();
-    addDebugLog(`🌿 Sherpa response: Answer generated (${data.sources?.length || 0} sources)`);
-    
-    // Display the answer
-    currentAnswer = data.answer;
-    currentSource = data.sources && data.sources.length > 0 ? data.sources[0] : null;
-    
-    showResult(data.answer, data.sources || []);
-    showStatus("Sherpa's found a spot!", 'success');
-    
-  } catch (error) {
-    console.error('Sherpa consultation error:', error);
-    addDebugLog(`🍂 Sherpa consultation error: ${error.message}`);
-    showError(`Sherpa consultation failed: ${error.message}`);
-  }
-}
-
-// Helper function to extract domain from URL
-function extractDomain(url) {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
-}
-
-// Voice Recognition Functions
-function initializeVoiceRecognition() {
+// Initialize voice recognition
+async function initializeVoiceRecognition() {
   addDebugLog('🎤 Initializing voice recognition...');
-  addDebugLog(`🎤 Browser: ${navigator.userAgent}`);
-  addDebugLog(`🎤 SpeechRecognition available: ${'SpeechRecognition' in window}`);
-  addDebugLog(`🎤 webkitSpeechRecognition available: ${'webkitSpeechRecognition' in window}`);
   
   // Check if browser supports speech recognition
   if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -1215,167 +79,95 @@ function initializeVoiceRecognition() {
       recognition.onend = handleVoiceEnd;
       
       addDebugLog('🎤 Voice recognition initialized successfully');
+      updateState('ready');
     } catch (error) {
       addDebugLog(`🍂 Voice recognition initialization failed: ${error.message}`);
       isVoiceSupported = false;
+      updateState('error');
     }
   } else {
     isVoiceSupported = false;
     addDebugLog('🍂 Voice recognition not supported in this browser');
+    updateState('error');
   }
+}
+
+// Handle Sherpa circle click
+async function handleSherpaClick() {
+  addDebugLog('🖱️ Sherpa circle clicked');
   
-  // Voice button should be hidden by default (only shown in query mode)
-  if (voiceBtnEl) {
-    voiceBtnEl.style.display = 'none';
-    addDebugLog('🎤 Voice button hidden by default');
-    addDebugLog(`🎤 Voice button element: ${voiceBtnEl}`);
-    addDebugLog(`🎤 Voice button parent: ${voiceBtnEl.parentElement}`);
-  } else {
-    addDebugLog('🍂 CRITICAL: voiceBtnEl is null! Voice button not found in DOM');
+  if (currentState === 'idle' || currentState === 'ready') {
+    addDebugLog('🎤 Starting voice input...');
+    await startListening();
+  } else if (currentState === 'listening') {
+    addDebugLog('🎤 Stopping voice input...');
+    stopListening();
+  } else if (currentState === 'error') {
+    addDebugLog('🔄 Retrying voice recognition...');
+    // Try to reinitialize
+    await initializeVoiceRecognition();
   }
 }
 
-// Note: Removed iframe and new tab methods - now using direct permission requests
-
-// Smooth transition helper for elements
-function smoothShow(element) {
-  if (!element) return;
-  element.style.display = element === voiceBtnEl ? 'flex' : 'block';
-  // Small delay to ensure display is set before removing hidden class
-  setTimeout(() => {
-    element.classList.remove('hidden');
-  }, 10);
-}
-
-function smoothHide(element) {
-  if (!element) return;
-  element.classList.add('hidden');
-  // Hide completely after transition
-  setTimeout(() => {
-    if (element.classList.contains('hidden')) {
-      element.style.display = 'none';
-    }
-  }, 300); // Match CSS transition duration
-}
-
-// Simple rule: microphone only shows when there's an entry field AND microphone is working
-function updateVoiceButtonVisibility() {
-  if (!voiceBtnEl) {
-    addDebugLog('🍂 updateVoiceButtonVisibility: voiceBtnEl is null');
+// Start listening for voice input
+async function startListening() {
+  if (!isVoiceSupported) {
+    addDebugLog('🍂 Voice not supported');
+    updateState('error');
     return;
   }
   
-  const hasEntryField = questionInputEl && !questionInputEl.classList.contains('hidden');
-  const micEnabled = isVoiceSupported && microphonePermissionGranted;
+  // Request microphone permission if needed
+  if (!microphonePermissionGranted) {
+    addDebugLog('🎤 Requesting microphone permission...');
+    try {
+      await requestMicrophonePermission();
+    } catch (error) {
+      addDebugLog(`🍂 Microphone permission denied: ${error.message}`);
+      updateState('error');
+      return;
+    }
+  }
   
-  addDebugLog(`🎤 Voice button visibility check: hasEntryField=${hasEntryField}, micEnabled=${micEnabled}, isVoiceSupported=${isVoiceSupported}, microphonePermissionGranted=${microphonePermissionGranted}`);
-  
-  if (hasEntryField && micEnabled) {
-    addDebugLog('🎤 Showing voice button - conditions met');
-    smoothShow(voiceBtnEl);
-  } else {
-    addDebugLog('🎤 Hiding voice button - conditions not met');
-    smoothHide(voiceBtnEl);
+  try {
+    addDebugLog('🎤 Starting voice recognition...');
+    isListening = true;
+    updateState('listening');
+    
+    // Start timeout for silence detection
+    startVoiceTimeout();
+    
+    recognition.start();
+  } catch (error) {
+    addDebugLog(`🍂 Voice recognition start error: ${error.message}`);
+    updateState('error');
   }
 }
 
-// Check if voice button is visible and ready for input
-function isVoiceButtonVisible() {
-  if (!voiceBtnEl) return false;
+// Stop listening
+function stopListening() {
+  if (recognition && isListening) {
+    console.log('🎤 Stopping voice recognition...');
+    recognition.stop();
+  }
   
-  // Check if voice button is not hidden and is displayed
-  const isNotHidden = !voiceBtnEl.classList.contains('hidden');
-  const isDisplayed = window.getComputedStyle(voiceBtnEl).display !== 'none';
-  const isInInputRow = voiceBtnEl.closest('.input-row') !== null;
-  
-  return isNotHidden && isDisplayed && isInInputRow;
-}
-
-// Check if transcript contains excessive "umm"s or "aa"s
-function hasExcessiveUmm(transcript) {
-  const lowerTranscript = transcript.toLowerCase();
-  const ummMatches = (lowerTranscript.match(/\b(um|uh|ah|er|mm|hmm)\b/g) || []).length;
-  return ummMatches >= UMM_THRESHOLD;
-}
-
-// Reset voice recognition tracking variables
-function resetVoiceTracking() {
-  voiceStartTime = Date.now();
-  lastTranscriptTime = Date.now();
-  ummCount = 0;
-  
-  // Clear any existing timeout
+  // Clear timeout and reset state
   if (voiceTimeout) {
     clearTimeout(voiceTimeout);
     voiceTimeout = null;
   }
+  isListening = false;
+  updateState('ready');
 }
 
-// Start voice timeout (stops listening after silence)
-function startVoiceTimeout() {
-  if (voiceTimeout) {
-    clearTimeout(voiceTimeout);
-  }
-  
-  voiceTimeout = setTimeout(() => {
-    addDebugLog('🎤 Voice timeout - stopping due to silence');
-    stopVoiceRecognition();
-  }, VOICE_TIMEOUT_MS);
-}
-
-// Request microphone permission directly in popup context
+// Request microphone permission
 async function requestMicrophonePermission() {
-  addDebugLog('🎤 Starting microphone permission request...');
+  console.log('🎤 Requesting microphone permission...');
   
-  // Don't request permission if we're in scout mode
-  if (analyzeBtnEl.classList.contains('hidden') && queryBtnEl.classList.contains('hidden')) {
-    addDebugLog('🍂 In scout mode - skipping microphone permission request');
-    return;
-  }
-  
-  if (!isVoiceSupported) {
-    addDebugLog('🍂 Skipping microphone permission request - voice not supported');
-    return;
-  }
-
-  // Check if permission is already granted
-  if (microphonePermissionGranted) {
-    addDebugLog('🎤 Microphone permission already granted - skipping request');
-    updateVoiceButtonState('ready');
-    showStatus('Microphone already ready for voice input!', 'success');
-    
-    // Ensure voice button is shown if conditions are met
-    updateVoiceButtonVisibility();
-    if (isVoiceSupported && microphonePermissionGranted) {
-      const hasEntryField = questionInputEl && !questionInputEl.classList.contains('hidden');
-      if (hasEntryField) {
-        addDebugLog('🎤 Microphone already ready - ensuring voice button is visible');
-        // Force show the voice button
-        if (voiceBtnEl) {
-          voiceBtnEl.style.display = 'flex';
-          voiceBtnEl.classList.remove('hidden');
-        }
-      }
-    }
-    
-    setTimeout(() => hideStatus(), 2000);
-    return;
-  }
-
-  // Request microphone permission directly in popup context
   try {
-    addDebugLog('🎤 Requesting microphone permission directly...');
-    
-    // Show loading state
-    updateVoiceButtonState('processing');
-    showStatus('Requesting microphone access...', 'working');
-    
-    // Request microphone access directly
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     
-    addDebugLog('🎤 Microphone permission granted!');
-    
-    // Test the stream to make sure it works
+    // Test the stream
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const source = audioContext.createMediaStreamSource(stream);
     const analyser = audioContext.createAnalyser();
@@ -1386,138 +178,34 @@ async function requestMicrophonePermission() {
     const dataArray = new Uint8Array(bufferLength);
     analyser.getByteFrequencyData(dataArray);
     
-    // Stop the tracks to prevent the recording indicator from being shown
-    stream.getTracks().forEach(function (track) {
-      track.stop();
-    });
-    
-    // Clean up audio context
+    // Stop the tracks
+    stream.getTracks().forEach(track => track.stop());
     audioContext.close();
     
-    // Update state
     microphonePermissionGranted = true;
-    updateVoiceButtonState('ready');
-    showStatus('Microphone ready for voice input!', 'success');
-    
-    // Update voice button visibility based on simple rule
-    updateVoiceButtonVisibility();
-    
-    // Ensure voice button is shown if conditions are met
-    if (isVoiceSupported && microphonePermissionGranted) {
-      const hasEntryField = questionInputEl && !questionInputEl.classList.contains('hidden');
-      if (hasEntryField) {
-        addDebugLog('🎤 Microphone ready - ensuring voice button is visible');
-        // Force show the voice button
-        if (voiceBtnEl) {
-          voiceBtnEl.style.display = 'flex';
-          voiceBtnEl.classList.remove('hidden');
-        }
-      }
-    }
-    
-    // Hide success message after 2 seconds
-    setTimeout(() => {
-      hideStatus();
-    }, 2000);
-    
+    console.log('🎤 Microphone permission granted');
   } catch (error) {
-    addDebugLog(`🍂 Microphone permission denied: ${error.name}`);
-    microphonePermissionGranted = false;
-    
-    // Only show error if we're in query mode
-    if (!analyzeBtnEl.classList.contains('hidden') || !queryBtnEl.classList.contains('hidden')) {
-      if (error.name === 'NotAllowedError') {
-        showError('Microphone access denied. Please allow microphone access in your browser settings to use voice input.');
-      } else if (error.name === 'NotFoundError') {
-        showError('No microphone found. Please connect a microphone to use voice input.');
-      } else {
-        showError(`Microphone error: ${error.message}`);
-      }
-      
-      // Hide voice button if permission denied
-      if (voiceBtnEl) {
-        voiceBtnEl.style.display = 'none';
-      }
-    }
-    
-    updateVoiceButtonState('error');
-    updateVoiceButtonVisibility();
+    console.error('🍂 Microphone permission denied:', error);
+    throw error;
   }
 }
 
-function handleVoiceInput() {
-  if (!isVoiceSupported) {
-    showError('Voice input not supported in this browser');
-    return;
-  }
-  
-  if (isListening) {
-    // Stop listening
-    stopVoiceRecognition();
-  } else {
-    // Clear the display and reset for new query
-    clearDisplayForNewQuery();
-    
-    // Show immediate status message to eliminate visual delay
-    showStatus('Preparing voice input...', 'working');
-    
-    // Check microphone permission before starting
-    if (microphonePermissionGranted) {
-      startVoiceRecognition();
-    } else {
-      addDebugLog('🎤 Permission not granted, requesting via iframe...');
-      showStatus('Requesting microphone permission...', 'working');
-      requestMicrophonePermission();
-    }
-  }
-}
-
-async function checkMicrophonePermission() {
-  // For iframe method, we track permission state directly
-  addDebugLog(`🎤 Checking microphone permission: ${microphonePermissionGranted}`);
-  return microphonePermissionGranted;
-}
-
-function startVoiceRecognition() {
-  try {
-    addDebugLog('🎤 Starting voice recognition...');
-    isListening = true;
-    updateVoiceButtonState('listening');
-    showStatus('Sherpa\'s listening...', 'working');
-    
-    // Reset tracking variables
-    resetVoiceTracking();
-    
-    // Start timeout for silence detection
-    startVoiceTimeout();
-    
-    recognition.start();
-  } catch (error) {
-    addDebugLog(`🍂 Voice recognition start error: ${error.message}`);
-    handleVoiceError({ error: 'start_failed' });
-  }
-}
-
-function stopVoiceRecognition() {
-  if (recognition && isListening) {
-    addDebugLog('🎤 Stopping voice recognition...');
-    recognition.stop();
-  }
-  
-  // Clear timeout and reset state
+// Start voice timeout
+function startVoiceTimeout() {
   if (voiceTimeout) {
     clearTimeout(voiceTimeout);
-    voiceTimeout = null;
   }
-  isListening = false;
   
-  // Hide the listening status
-  hideStatus();
+  voiceTimeout = setTimeout(() => {
+    console.log('🎤 Voice timeout - stopping due to silence');
+    stopListening();
+  }, VOICE_TIMEOUT_MS);
 }
 
+// Voice recognition event handlers
 function handleVoiceStart() {
-  addDebugLog('🎤 Voice recognition started - listening for speech');
-  updateVoiceButtonState('listening');
+  addDebugLog('🎤 Voice recognition started');
+  updateState('listening');
 }
 
 function handleVoiceResult(event) {
@@ -1525,38 +213,13 @@ function handleVoiceResult(event) {
   addDebugLog(`🎤 Voice input received: "${transcript}"`);
   
   // Update last transcript time
-  lastTranscriptTime = Date.now();
-  
-  // Check for excessive "umm"s
-  if (hasExcessiveUmm(transcript)) {
-    addDebugLog('🎤 Excessive "umm"s detected - stopping voice recognition');
-    stopVoiceRecognition();
-    showStatus('You got this! Take a breath and try again.', 'success');
-    setTimeout(() => hideStatus(), 3000);
-    return;
+  if (voiceTimeout) {
+    clearTimeout(voiceTimeout);
+    startVoiceTimeout();
   }
   
-  // Update the input field with the transcript
-  questionInputEl.value = transcript;
-  
-  // Update voice button state
-  updateVoiceButtonState('processing');
-  showStatus('Consulting the mountain spirits...', 'working');
-  
-  // Small delay to show processing state, then trigger query
-  setTimeout(() => {
-    updateVoiceButtonState('default');
-    
-    // Auto-trigger query if we're in the right state
-    if (isScouted && !queryBtnEl.classList.contains('hidden') && !queryBtnEl.disabled) {
-      addDebugLog('🎤 Auto-triggering query from voice input');
-      // Show the next status message immediately to eliminate gap
-      showStatus('Searching with Pathfinder...', 'working');
-      handleQuery();
-    } else {
-      hideStatus();
-    }
-  }, 1000);
+  // Process the voice command
+  processVoiceCommand(transcript);
 }
 
 function handleVoiceError(event) {
@@ -1566,40 +229,31 @@ function handleVoiceError(event) {
   
   switch (event.error) {
     case 'no-speech':
-      errorMessage = 'No speech detected. Please try again.';
+      errorMessage = 'No speech detected';
       break;
     case 'audio-capture':
-      errorMessage = 'Microphone not available. Please check permissions.';
+      errorMessage = 'Microphone not available';
       break;
     case 'not-allowed':
-      errorMessage = 'Microphone permission denied. Please allow microphone access.';
+      errorMessage = 'Microphone permission denied';
       break;
     case 'network':
-      errorMessage = 'Network error. Please check your connection.';
-      break;
-    case 'start_failed':
-      errorMessage = 'Failed to start voice recognition. Please try again.';
+      errorMessage = 'Network error';
       break;
     default:
-      errorMessage = `Voice input error: ${event.error}`;
+      errorMessage = `Voice error: ${event.error}`;
   }
   
-  updateVoiceButtonState('error');
-  showError(errorMessage);
-  
-  // Reset button state after error
+  updateState('error');
   setTimeout(() => {
-    updateVoiceButtonState('default');
+    updateState('ready');
   }, 3000);
 }
 
 function handleVoiceEnd() {
   addDebugLog('🎤 Voice recognition ended');
   isListening = false;
-  updateVoiceButtonState('default');
-  
-  // Hide the listening status
-  hideStatus();
+  updateState('ready');
   
   // Clear timeout
   if (voiceTimeout) {
@@ -1608,87 +262,277 @@ function handleVoiceEnd() {
   }
 }
 
-function updateVoiceButtonState(state) {
-  if (!voiceBtnEl) {
-    addDebugLog('🍂 updateVoiceButtonState: voiceBtnEl is null');
+// Process voice commands
+async function processVoiceCommand(transcript) {
+  addDebugLog(`🧠 Processing voice command: "${transcript}"`);
+  updateState('processing');
+  
+  const command = transcript.toLowerCase().trim();
+  
+  try {
+    // Check for wake word
+    if (command.includes('hey sherpa') || command.includes('hey sherpa 2')) {
+      addDebugLog('🎯 Wake word detected');
+      speakResponse("I'm listening. What can I help you with?");
+      updateState('ready');
     return;
   }
   
-  // Remove all state classes
-  voiceBtnEl.classList.remove('listening', 'processing', 'error', 'ready');
-  
-  // Add the new state class
-  if (state !== 'default') {
-    voiceBtnEl.classList.add(state);
-  }
-  
-  // Update button disabled state
-  voiceBtnEl.disabled = state === 'processing';
-  
-  // Update icon based on state
-  const icon = voiceBtnEl.querySelector('.voice-icon');
-  if (icon) {
-    switch (state) {
-      case 'listening':
-        icon.textContent = '●';
-        break;
-      case 'processing':
-        icon.textContent = '◐';
-        break;
-      case 'error':
-        icon.textContent = '▲';
-        break;
-      case 'ready':
-        icon.textContent = '●';
-        break;
-      default:
-        icon.textContent = '○';
+    // Navigation commands
+    if (command.includes('take me to') || command.includes('go to') || command.includes('navigate to')) {
+      addDebugLog('🧭 Processing navigation command');
+      await handleNavigationCommand(command);
     }
-  } else {
-    addDebugLog('🍂 updateVoiceButtonState: voice-icon not found');
+    // On-page assistance
+    else if (command.includes('where is') || command.includes('find') || command.includes('show me')) {
+      addDebugLog('🔍 Processing on-page command');
+      await handleOnPageCommand(command);
+    }
+    // General help
+    else if (command.includes('help') || command.includes('what can you do')) {
+      addDebugLog('❓ Processing help command');
+      handleHelpCommand();
+    }
+    // Fallback - web search
+    else {
+      addDebugLog('🔍 Processing web search command');
+      await handleWebSearchCommand(command);
+    }
+    
+  } catch (error) {
+    addDebugLog(`🍂 Error processing voice command: ${error.message}`);
+    speakResponse("Sorry, I couldn't process that command. Please try again.");
+    updateState('ready');
   }
 }
 
-
-// Test microphone permission function
-function testMicrophonePermission() {
-  addDebugLog('TEST: Manual microphone permission test');
-  addDebugLog(`Voice button exists: ${!!voiceBtnEl}`);
-  addDebugLog(`Voice supported: ${isVoiceSupported}`);
-  addDebugLog(`Permission granted: ${microphonePermissionGranted}`);
-  addDebugLog(`Method: Using new tab for microphone permission`);
+// Handle navigation commands
+async function handleNavigationCommand(command) {
+  addDebugLog(`🧭 Handling navigation command: "${command}"`);
   
-  // Try to request permission
-  requestMicrophonePermission();
+  // Extract destination from command
+  let destination = command
+    .replace(/take me to|go to|navigate to/gi, '')
+    .trim();
+  
+  // Clean up common words
+  destination = destination
+    .replace(/^(the|a|an)\s+/i, '')
+    .trim();
+  
+  addDebugLog(`🎯 Extracted destination: "${destination}"`);
+  
+  if (!destination) {
+    addDebugLog('❓ No destination provided');
+    speakResponse("Where would you like me to take you?");
+    updateState('ready');
+    return;
+  }
+  
+  // Try to construct URL
+  let url = destination;
+  
+  // Add protocol if missing
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    // Check if it looks like a domain
+    if (url.includes('.') && !url.includes(' ')) {
+      url = 'https://' + url;
+      addDebugLog(`🌐 Added https:// protocol: ${url}`);
+    } else {
+      // Treat as search query
+      url = `https://www.google.com/search?q=${encodeURIComponent(destination)}`;
+      addDebugLog(`🔍 Treating as search query: ${url}`);
+    }
+  }
+  
+  addDebugLog(`🌐 Navigating to: ${url}`);
+  speakResponse(`Opening ${destination}`);
+  
+  // Navigate to the URL
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    await chrome.tabs.update(tab.id, { url: url });
+    addDebugLog('✅ Navigation successful');
+    updateState('ready');
+  } catch (error) {
+    addDebugLog(`🍂 Navigation error: ${error.message}`);
+    speakResponse("Sorry, I couldn't navigate to that destination.");
+    updateState('ready');
+  }
+}
+
+// Handle on-page assistance commands
+async function handleOnPageCommand(command) {
+  addDebugLog(`🔍 Handling on-page command: "${command}"`);
+  
+  // Extract search term from command
+  let searchTerm = command
+    .replace(/where is|find|show me/gi, '')
+    .trim();
+  
+  addDebugLog(`🎯 Extracted search term: "${searchTerm}"`);
+  
+  if (!searchTerm) {
+    addDebugLog('❓ No search term provided');
+    speakResponse("What would you like me to find on this page?");
+    updateState('ready');
+    return;
+  }
+  
+  addDebugLog(`🔍 Searching for: "${searchTerm}"`);
+  speakResponse(`Looking for ${searchTerm} on this page`);
+  
+  // Send message to content script to search the page
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    addDebugLog(`📨 Sending search message to tab: ${tab.id}`);
+    
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      action: 'searchOnPage',
+      searchTerm: searchTerm
+    });
+    
+    addDebugLog(`📨 Received response: ${JSON.stringify(response)}`);
+    
+    if (response && response.found) {
+      addDebugLog(`✅ Found ${response.results.length} matches`);
+      speakResponse(`Found ${searchTerm}. ${response.message}`);
+    } else {
+      addDebugLog('❌ No matches found');
+      speakResponse(`I couldn't find ${searchTerm} on this page.`);
+    }
+  } catch (error) {
+    addDebugLog(`🍂 On-page search error: ${error.message}`);
+    speakResponse("Sorry, I couldn't search this page.");
+  }
+  
+  updateState('ready');
+}
+
+// Handle help command
+function handleHelpCommand() {
+  addDebugLog('❓ Handling help command');
+  
+  const helpText = "I can help you navigate to websites, find elements on pages, or search the web. Try saying 'take me to google.com' or 'find the search button'.";
+  speakResponse(helpText);
+  updateState('ready');
+}
+
+// Handle web search commands
+async function handleWebSearchCommand(command) {
+  addDebugLog(`🔍 Handling web search command: "${command}"`);
+  
+  speakResponse(`Searching for ${command}`);
+  
+  // Use Google search
+  const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(command)}`;
+  addDebugLog(`🔍 Search URL: ${searchUrl}`);
+  
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    await chrome.tabs.update(tab.id, { url: searchUrl });
+    addDebugLog('✅ Web search navigation successful');
+    updateState('ready');
+  } catch (error) {
+    addDebugLog(`🍂 Web search error: ${error.message}`);
+    speakResponse("Sorry, I couldn't perform that search.");
+    updateState('ready');
+  }
+}
+
+// Text-to-speech function
+function speakResponse(text) {
+  addDebugLog(`🔊 Speaking: "${text}"`);
+  
+  if ('speechSynthesis' in window) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    utterance.pitch = 1.0;
+    utterance.volume = 0.8;
+    speechSynthesis.speak(utterance);
+  } else {
+    addDebugLog('🍂 Speech synthesis not supported');
+  }
+}
+
+// Update UI state
+function updateState(state) {
+  addDebugLog(`🔄 State change: ${currentState} → ${state}`);
+  currentState = state;
+  
+  // Remove all state classes
+  sherpaCircle.classList.remove('listening', 'processing', 'ready', 'error');
+  statusText.classList.remove('listening', 'processing', 'ready', 'error');
+  
+  // Add new state class
+  if (state !== 'idle') {
+    sherpaCircle.classList.add(state);
+    statusText.classList.add(state);
+  }
+  
+  // Update icon and text
+    switch (state) {
+    case 'idle':
+      sherpaIcon.textContent = '○';
+      statusText.textContent = 'Click to activate';
+      break;
+      case 'listening':
+      sherpaIcon.textContent = '●';
+      statusText.textContent = 'Listening...';
+        break;
+      case 'processing':
+      sherpaIcon.textContent = '◐';
+      statusText.textContent = 'Processing...';
+        break;
+      case 'ready':
+      sherpaIcon.textContent = '○';
+      statusText.textContent = 'Ready to help';
+        break;
+    case 'error':
+      sherpaIcon.textContent = '▲';
+      statusText.textContent = 'Error - Click to retry';
+      break;
+  }
+}
+
+// Debug logging functions
+function setupDebugLogHandlers() {
+  // Copy log button
+  copyLogBtnEl.addEventListener('click', copyDebugLog);
+  
+  // Clear log button
+  clearLogBtnEl.addEventListener('click', clearDebugLog);
+  
+  // Toggle log button
+  logToggleBtnEl.addEventListener('click', toggleDebugLog);
 }
 
 function addDebugLog(message) {
   const timestamp = new Date().toLocaleTimeString();
   const logEntry = `[${timestamp}] ${message}`;
   
-  // Add to buffer (fast operation)
+  // Add to buffer
   logBuffer.push(logEntry);
   
-  // Keep only recent entries in buffer (prevent memory bloat)
-  if (logBuffer.length > 1000) {
-    logBuffer = logBuffer.slice(-500); // Keep last 500 entries
+  // Keep only recent entries
+  if (logBuffer.length > MAX_LOG_ENTRIES) {
+    logBuffer = logBuffer.slice(-MAX_LOG_ENTRIES);
   }
   
-  // Console log immediately (for debugging)
+  // Console log immediately
   console.log(logEntry);
   
-  // Update display less frequently (performance optimization)
+  // Update display with throttling
   if (!logUpdateInterval) {
-    logUpdateInterval = setTimeout(updateLogDisplay, 100); // Update every 100ms
+    logUpdateInterval = setTimeout(updateLogDisplay, 100);
   }
 }
 
-// Update log display with throttling
 function updateLogDisplay() {
   if (logBuffer.length === 0) return;
   
-  // Show only the last N lines for performance
-  const displayLines = logBuffer.slice(-logDisplayLimit);
+  // Show more lines since we have more space
+  const displayLines = logBuffer.slice(-80);
   debugContentEl.textContent = displayLines.join('\n');
   debugContentEl.scrollTop = debugContentEl.scrollHeight;
   
@@ -1697,21 +541,19 @@ function updateLogDisplay() {
 }
 
 function clearDebugLog() {
-  // Clear both display and buffer
   debugContentEl.textContent = '';
   logBuffer = [];
   
-  // Clear any pending update
   if (logUpdateInterval) {
     clearTimeout(logUpdateInterval);
     logUpdateInterval = null;
   }
+  
+  addDebugLog('🧹 Debug log cleared');
 }
 
-// Copy debug log to clipboard
 async function copyDebugLog() {
   try {
-    // Copy the full buffer, not just displayed text
     const logText = logBuffer.join('\n');
     if (!logText.trim()) {
       addDebugLog('🍂 No log content to copy');
@@ -1719,31 +561,33 @@ async function copyDebugLog() {
     }
     
     await navigator.clipboard.writeText(logText);
-    addDebugLog('📋 Full log copied to clipboard!');
+    addDebugLog('📋 Log copied to clipboard!');
     
-    // Visual feedback - briefly change button text
+    // Visual feedback
     const originalText = copyLogBtnEl.textContent;
     copyLogBtnEl.textContent = '✅ Copied!';
-    copyLogBtnEl.style.background = '#10b981';
+    copyLogBtnEl.style.background = '#16a34a';
     
     setTimeout(() => {
       copyLogBtnEl.textContent = originalText;
-      copyLogBtnEl.style.background = '#1a1a1a'; // Always return to black background
+      copyLogBtnEl.style.background = '#404040';
     }, 1500);
     
   } catch (error) {
     addDebugLog(`🍂 Failed to copy log: ${error.message}`);
-    
-    // Fallback: try to select the text
-    try {
-      const range = document.createRange();
-      range.selectNodeContents(debugContentEl);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-      addDebugLog('📋 Log selected - use Ctrl+C to copy');
-    } catch (fallbackError) {
-      addDebugLog(`🍂 Copy fallback failed: ${fallbackError.message}`);
-    }
+  }
+}
+
+function toggleDebugLog() {
+  debugEl.classList.toggle('collapsed');
+  document.body.classList.toggle('log-expanded');
+  
+  // Update toggle button icon
+  if (debugEl.classList.contains('collapsed')) {
+    logToggleIconEl.textContent = '+';
+    addDebugLog('🌲 Debug log collapsed');
+  } else {
+    logToggleIconEl.textContent = '−';
+    addDebugLog('🌲 Debug log expanded');
   }
 }

@@ -1,7 +1,6 @@
 /**
- * permission.js
- * Requests user permission for microphone access using iframe method.
- * This file is loaded in an invisible iframe to trigger the permission dialog.
+ * permission.js for Sherpa 2 (Apache)
+ * Requests user permission for microphone access
  */
 
 /**
@@ -76,10 +75,10 @@ function updateStatus(message, type) {
 }
 
 // Add debugging to see what's happening
-console.log("Permission iframe loaded, requesting microphone access...");
+console.log("Permission page loaded, requesting microphone access...");
 updateStatus("Requesting microphone permission...", "loading");
 
-// Call the function to request microphone permission when iframe loads
+// Call the function to request microphone permission when page loads
 getUserPermission()
   .then(() => {
     updateStatus("Microphone access granted! Click anywhere to close.", "success");

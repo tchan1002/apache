@@ -1,4 +1,29 @@
-/* Content script styles for Sherpa extension */
+/* Content script styles for Sherpa 2 (Apache) */
 
-/* For now, this is empty since we're not injecting UI elements */
-/* In the future, this could style floating buttons or other injected elements */
+/* Highlight styles for search results */
+.sherpa-highlight {
+  background-color: #fef3c7 !important;
+  border: 2px solid #f59e0b !important;
+  border-radius: 4px !important;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2) !important;
+  transition: all 0.3s ease !important;
+}
+
+/* Ensure highlights are visible */
+.sherpa-highlight * {
+  background-color: transparent !important;
+}
+
+/* Pulse animation for highlighted elements */
+@keyframes sherpa-pulse {
+  0%, 100% { 
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2) !important;
+  }
+  50% { 
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.4) !important;
+  }
+}
+
+.sherpa-highlight {
+  animation: sherpa-pulse 1s ease-in-out 2 !important;
+}
