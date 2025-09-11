@@ -10,26 +10,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'test') {
     console.log('✅ Content script test message received');
     sendResponse({ success: true, message: 'Content script is ready' });
+    return true;
   } else if (request.action === 'searchOnPage') {
     const result = searchOnPage(request.searchTerm);
     sendResponse(result);
+    return true;
   } else if (request.action === 'scrapePage') {
     console.log('🔍 Content script starting page scrape...');
     try {
       const result = scrapePage();
       console.log('📄 Content script scrape result:', result);
       // Always send a response, even if result is undefined
-      sendResponse(result || {
+      const response = result || {
         success: false,
         error: 'ScrapePage returned undefined'
-      });
+      };
+      console.log('📤 Content script sending response:', response);
+      sendResponse(response);
     } catch (error) {
       console.error('🍂 Content script scrape error:', error);
-      sendResponse({
+      const errorResponse = {
         success: false,
         error: error.message
-      });
+      };
+      console.log('📤 Content script sending error response:', errorResponse);
+      sendResponse(errorResponse);
     }
+    return true;
   }
   
   // Return true to indicate we will send a response asynchronously

@@ -351,6 +351,7 @@ function handleVoiceResult(event) {
     // Set user speaking flag and switch to picking-up state
     if (!isUserSpeaking) {
       isUserSpeaking = true;
+      addDebugLog('🔄 Switching to picking-up state - user is speaking');
       updateState('picking-up');
     }
     return;
@@ -413,6 +414,10 @@ function isClearCommandPattern(transcript) {
     'what are the links',
     'show links',
     'available links',
+    'what videos',
+    'what are the videos',
+    'show videos',
+    'available videos',
     'analyze page',
     'what\'s on this page',
     'page summary',
@@ -513,6 +518,11 @@ async function processVoiceCommand(transcript) {
       addDebugLog('🔗 Processing link suggestions command');
       await handleLinkSuggestionsCommand(command);
     }
+    // Video suggestions
+    else if (command.includes('what videos') || command.includes('show videos') || command.includes('available videos')) {
+      addDebugLog('🎥 Processing video suggestions command');
+      await handleVideoSuggestionsCommand(command);
+    }
     // Page analysis
     else if (command.includes('analyze page') || command.includes('what\'s on this page') || command.includes('page summary')) {
       addDebugLog('📄 Processing page analysis command');
@@ -541,14 +551,16 @@ async function processVoiceCommand(transcript) {
       try {
         addDebugLog('🔄 Restarting listening after command processing');
         isListening = true;
-        // Only start if not already running
-        if (recognition && (!recognition.state || recognition.state === 'not-started' || recognition.state === 'ended')) {
+        // Check if recognition is actually stopped
+        if (recognition.state === 'ended' || recognition.state === 'not-started' || !recognition.state) {
           recognition.start();
         } else {
-          addDebugLog('🎤 Recognition already running, skipping restart');
+          addDebugLog(`🎤 Recognition state is '${recognition.state}', skipping restart`);
         }
       } catch (error) {
         addDebugLog(`🍂 Failed to restart listening: ${error.message}`);
+        // If restart fails, just set listening to true and let the state correction handle it
+        isListening = true;
       }
     }
   }, 500);
@@ -1048,6 +1060,39 @@ async function handleLinkSuggestionsCommand(command) {
     } else {
       speakResponse(`I couldn't find any links related to "${searchTerm}" on this page.`);
     }
+  }
+  
+  updateState('ready');
+}
+
+// Handle video suggestions
+async function handleVideoSuggestionsCommand(command) {
+  addDebugLog(`🎥 Handling video suggestions: "${command}"`);
+  
+  // Check if we have cached links
+  if (pageMap.links.length === 0) {
+    speakResponse("I haven't found any links on this page yet. Let me analyze it first.");
+    await scrapeCurrentPageWithRetry();
+    if (pageMap.links.length === 0) {
+      speakResponse("I still don't see any links on this page.");
+      updateState('ready');
+      return;
+    }
+  }
+  
+  // Filter for video-related links
+  const videoLinks = pageMap.links.filter(link => {
+    const text = link.text.toLowerCase();
+    const href = link.href.toLowerCase();
+    return text.includes('video') || text.includes('watch') || text.includes('play') || 
+           href.includes('youtube') || href.includes('video') || href.includes('watch');
+  });
+  
+  if (videoLinks.length === 0) {
+    speakResponse("I don't see any video links on this page.");
+  } else {
+    const videoTexts = videoLinks.slice(0, 3).map(link => link.text).join(', ');
+    speakResponse(`Here are the video links I found: ${videoTexts}`);
   }
   
   updateState('ready');
