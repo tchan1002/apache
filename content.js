@@ -15,9 +15,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse(result);
   } else if (request.action === 'scrapePage') {
     console.log('🔍 Content script starting page scrape...');
-    const result = scrapePage();
-    console.log('📄 Content script scrape result:', result);
-    sendResponse(result);
+    try {
+      const result = scrapePage();
+      console.log('📄 Content script scrape result:', result);
+      // Ensure we always send a response
+      if (result) {
+        sendResponse(result);
+      } else {
+        console.error('🍂 ScrapePage returned undefined');
+        sendResponse({
+          success: false,
+          error: 'ScrapePage returned undefined'
+        });
+      }
+    } catch (error) {
+      console.error('🍂 Content script scrape error:', error);
+      sendResponse({
+        success: false,
+        error: error.message
+      });
+    }
   }
   
   // Return true to indicate we will send a response asynchronously

@@ -35,6 +35,12 @@ const MAX_LOG_ENTRIES = 100;
 let wakeWordDetected = false;
 const WAKE_WORDS = ['hey sherpa', 'sherpa', 'apache', 'hey'];
 
+// State management
+let lastStateChange = 0;
+const STATE_DEBOUNCE_MS = 500; // Minimum time between state changes
+let wakeWordTimeout = null;
+const WAKE_WORD_TIMEOUT_MS = 8000; // 8 seconds to allow full string registration
+
 // Page scraping and link mapping
 let pageMap = {
   title: '',
@@ -76,7 +82,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await startListening();
   
   // Set up periodic state checking to ensure UI reflects microphone status
-  setInterval(ensureMicrophoneState, 1000);
+  setInterval(ensureMicrophoneState, 3000); // Check every 3 seconds to reduce flickering
 });
 
 // Initialize voice recognition
@@ -341,8 +347,8 @@ function handleVoiceResult(event) {
   // Show that we're actively processing speech
   if (!isFinal) {
     addDebugLog(`🎤 Microphone actively recording: "${transcript}..."`);
-    // Show picking up state when actively recording
-    if (currentState !== 'picking-up') {
+    // Only switch to picking-up if we're in listening state
+    if (currentState === 'listening') {
       updateState('picking-up');
     }
     return;
@@ -350,9 +356,12 @@ function handleVoiceResult(event) {
   
   addDebugLog(`🎤 Voice input received: "${transcript}"`);
   
-  // Check for wake words
+  // Check for wake words - only process complete wake words
   const containsWakeWord = WAKE_WORDS.some(wakeWord => {
-    return transcript.includes(wakeWord.toLowerCase());
+    const lowerTranscript = transcript.toLowerCase();
+    const lowerWakeWord = wakeWord.toLowerCase();
+    // Only match if it's a complete wake word, not partial
+    return lowerTranscript === lowerWakeWord || lowerTranscript.endsWith(' ' + lowerWakeWord) || lowerTranscript.startsWith(lowerWakeWord + ' ');
   });
   
   // Check for clear command patterns (commands that don't need wake words)
@@ -363,6 +372,16 @@ function handleVoiceResult(event) {
     addDebugLog(`🎤 Wake word detected: "${transcript}"`);
     speakResponse("I'm listening. What can I help you with?");
     updateState('ready');
+    
+    // Set timeout to reset wake word detection after 8 seconds
+    if (wakeWordTimeout) {
+      clearTimeout(wakeWordTimeout);
+    }
+    wakeWordTimeout = setTimeout(() => {
+      wakeWordDetected = false;
+      addDebugLog('🔄 Wake word detection reset - ready for new commands');
+    }, WAKE_WORD_TIMEOUT_MS);
+    
     return; // Continue listening for the actual command
   }
   
@@ -372,7 +391,7 @@ function handleVoiceResult(event) {
     processVoiceCommand(transcript);
   } else {
     addDebugLog(`🎤 Ignoring speech (no wake word or clear command): "${transcript}"`);
-    // Stay in listening state if we're ignoring speech
+    // Return to listening state after processing speech
     if (isListening) {
       updateState('listening');
     }
@@ -389,6 +408,7 @@ function isClearCommandPattern(transcript) {
     'find',
     'show me',
     'what links',
+    'what are the links',
     'show links',
     'available links',
     'analyze page',
@@ -464,6 +484,13 @@ async function processVoiceCommand(transcript) {
   isListening = false;
   updateState('processing');
   
+  // Reset wake word detection after processing a command
+  wakeWordDetected = false;
+  if (wakeWordTimeout) {
+    clearTimeout(wakeWordTimeout);
+    wakeWordTimeout = null;
+  }
+  
   const command = transcript.toLowerCase().trim();
   
   try {
@@ -510,7 +537,12 @@ async function processVoiceCommand(transcript) {
       try {
         addDebugLog('🔄 Restarting listening after command processing');
         isListening = true;
-        recognition.start();
+        // Only start if not already running
+        if (recognition && recognition.state !== 'started') {
+          recognition.start();
+        } else {
+          addDebugLog('🎤 Recognition already running, skipping restart');
+        }
       } catch (error) {
         addDebugLog(`🍂 Failed to restart listening: ${error.message}`);
       }
@@ -694,8 +726,16 @@ function speakResponse(text) {
 
 // Update UI state
 function updateState(state) {
+  const now = Date.now();
+  
+  // Debounce rapid state changes
+  if (now - lastStateChange < STATE_DEBOUNCE_MS && state === 'picking-up') {
+    return; // Skip rapid picking-up state changes
+  }
+  
   addDebugLog(`🔄 State change: ${currentState} → ${state}`);
   currentState = state;
+  lastStateChange = now;
   
   // Remove all state classes
   sherpaCircle.classList.remove('listening', 'processing', 'ready', 'error', 'idle', 'picking-up');
@@ -740,12 +780,13 @@ function updateState(state) {
 
 // Ensure UI state reflects microphone activity
 function ensureMicrophoneState() {
-  if (isListening && currentState !== 'listening' && currentState !== 'processing' && currentState !== 'picking-up') {
-    addDebugLog('🔄 Correcting state - microphone is active but UI shows wrong state');
+  // Simple state correction - only fix obvious mismatches
+  if (isListening && currentState === 'idle') {
+    addDebugLog('🔄 Correcting state - microphone is active but UI shows idle');
     updateState('listening');
   } else if (!isListening && (currentState === 'listening' || currentState === 'picking-up')) {
-    addDebugLog('🔄 Correcting state - microphone is not active but UI shows listening/picking-up');
-    updateState('ready');
+    addDebugLog('🔄 Correcting state - microphone is not active but UI shows active state');
+    updateState('idle');
   }
 }
 
@@ -795,15 +836,36 @@ function updateLogDisplay() {
 }
 
 function clearDebugLog() {
+  // Prevent rapid clicking
+  if (clearLogBtnEl.disabled) return;
+  clearLogBtnEl.disabled = true;
+  
+  // Clear the log content directly
   debugContentEl.textContent = '';
   logBuffer = [];
   
+  // Clear any pending updates
   if (logUpdateInterval) {
     clearTimeout(logUpdateInterval);
     logUpdateInterval = null;
   }
   
-  addDebugLog('🧹 Debug log cleared');
+  // Add the clear message directly without triggering update mechanism
+  const timestamp = new Date().toLocaleTimeString();
+  const clearMessage = `[${timestamp}] 🧹 Debug log cleared`;
+  logBuffer.push(clearMessage);
+  
+  // Add some padding lines to maintain consistent width
+  const paddedMessage = clearMessage + '\n\n\n\n\n';
+  debugContentEl.textContent = paddedMessage;
+  
+  // Log to console
+  console.log(clearMessage);
+  
+  // Re-enable button after a short delay
+  setTimeout(() => {
+    clearLogBtnEl.disabled = false;
+  }, 500);
 }
 
 async function copyDebugLog() {
