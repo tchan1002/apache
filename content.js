@@ -18,16 +18,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     try {
       const result = scrapePage();
       console.log('📄 Content script scrape result:', result);
-      // Ensure we always send a response
-      if (result) {
-        sendResponse(result);
-      } else {
-        console.error('🍂 ScrapePage returned undefined');
-        sendResponse({
-          success: false,
-          error: 'ScrapePage returned undefined'
-        });
-      }
+      // Always send a response, even if result is undefined
+      sendResponse(result || {
+        success: false,
+        error: 'ScrapePage returned undefined'
+      });
     } catch (error) {
       console.error('🍂 Content script scrape error:', error);
       sendResponse({

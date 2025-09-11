@@ -40,6 +40,7 @@ let lastStateChange = 0;
 const STATE_DEBOUNCE_MS = 500; // Minimum time between state changes
 let wakeWordTimeout = null;
 const WAKE_WORD_TIMEOUT_MS = 8000; // 8 seconds to allow full string registration
+let isUserSpeaking = false; // Track if user is currently speaking
 
 // Page scraping and link mapping
 let pageMap = {
@@ -347,8 +348,9 @@ function handleVoiceResult(event) {
   // Show that we're actively processing speech
   if (!isFinal) {
     addDebugLog(`🎤 Microphone actively recording: "${transcript}..."`);
-    // Only switch to picking-up if we're in listening state
-    if (currentState === 'listening') {
+    // Set user speaking flag and switch to picking-up state
+    if (!isUserSpeaking) {
+      isUserSpeaking = true;
       updateState('picking-up');
     }
     return;
@@ -455,6 +457,7 @@ function handleVoiceEnd() {
   addDebugLog('🎤 Voice recognition ended - microphone stopped recording');
   isListening = false;
   wakeWordDetected = false; // Reset wake word detection
+  isUserSpeaking = false; // Reset user speaking flag
   
   // Only update state if we're not processing a command
   if (currentState !== 'processing') {
@@ -484,8 +487,9 @@ async function processVoiceCommand(transcript) {
   isListening = false;
   updateState('processing');
   
-  // Reset wake word detection after processing a command
+  // Reset wake word detection and speaking flag after processing a command
   wakeWordDetected = false;
+  isUserSpeaking = false;
   if (wakeWordTimeout) {
     clearTimeout(wakeWordTimeout);
     wakeWordTimeout = null;
@@ -538,7 +542,7 @@ async function processVoiceCommand(transcript) {
         addDebugLog('🔄 Restarting listening after command processing');
         isListening = true;
         // Only start if not already running
-        if (recognition && recognition.state !== 'started') {
+        if (recognition && (!recognition.state || recognition.state === 'not-started' || recognition.state === 'ended')) {
           recognition.start();
         } else {
           addDebugLog('🎤 Recognition already running, skipping restart');
