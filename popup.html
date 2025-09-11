@@ -15,7 +15,7 @@
       align-items: center;
       justify-content: flex-start;
       position: relative;
-      overflow: visible;
+      overflow: hidden;
       transition: height 0.3s ease;
     }
     
@@ -29,7 +29,8 @@
       align-items: center;
       justify-content: center;
       padding: 20px;
-      flex: 0 0 auto;
+      flex: 1;
+      min-height: 120px;
     }
     
     .sherpa-circle {
@@ -82,16 +83,11 @@
     }
     
     .status-text {
-      position: absolute;
-      bottom: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 10px;
+      margin-top: 12px;
+      font-size: 14px;
       color: #9ca3af;
       text-align: center;
-      width: 100%;
-      padding: 0 10px;
-      box-sizing: border-box;
+      transition: all 0.3s ease;
     }
     
     .status-text.listening {
@@ -166,24 +162,22 @@
     
     /* Debug log styles */
     .debug {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
       background: #1a1a1a;
       border-top: 1px solid #404040;
       height: 200px;
       transition: all 0.3s ease;
       opacity: 1;
       transform: translateY(0);
-      z-index: 5;
+      flex-shrink: 0;
+      overflow: hidden;
     }
     
     .debug.collapsed {
       height: 0;
       opacity: 0;
-      transform: translateY(100%);
+      transform: translateY(-10px);
       pointer-events: none;
+      overflow: hidden;
     }
     
     .debug-header {
@@ -247,31 +241,32 @@
     }
   </style>
 </head>
-<body>
-  <div class="main-interface">
-    <div class="sherpa-circle" id="sherpa-circle">
-      <div class="sherpa-icon" id="sherpa-icon">○</div>
-    </div>
-    <div class="status-text" id="status-text">Click to activate</div>
-  </div>
-  
-  <!-- Log toggle button -->
-  <button id="log-toggle-btn" class="log-toggle-btn" title="Toggle Log">
-    <span class="log-toggle-icon">−</span>
-  </button>
-  
-  <!-- Debug log section -->
-  <div id="debug" class="debug">
-    <div class="debug-header" id="debug-header">
-      🌲 Sherpa Log
-      <div class="debug-buttons">
-        <button id="copy-log-btn" class="copy-log-btn">📋</button>
-        <button id="clear-log-btn" class="clear-log-btn">Clear</button>
+  <body>
+    <!-- Main interface section -->
+    <section class="main-interface">
+      <div class="sherpa-circle" id="sherpa-circle">
+        <div class="sherpa-icon" id="sherpa-icon">○</div>
       </div>
-    </div>
-    <div id="debug-content" class="debug-content"></div>
-  </div>
-  
-  <script src="popup.js"></script>
-</body>
+      <div class="status-text" id="status-text">Ready</div>
+    </section>
+    
+    <!-- Log toggle button -->
+    <button id="log-toggle-btn" class="log-toggle-btn" title="Toggle Log">
+      <span class="log-toggle-icon">−</span>
+    </button>
+    
+    <!-- Debug log section -->
+    <section id="debug" class="debug">
+      <div class="debug-header" id="debug-header">
+        🌲 Sherpa Log
+        <div class="debug-buttons">
+          <button id="copy-log-btn" class="copy-log-btn">📋</button>
+          <button id="clear-log-btn" class="clear-log-btn">Clear</button>
+        </div>
+      </div>
+      <div id="debug-content" class="debug-content"></div>
+    </section>
+    
+    <script src="popup.js"></script>
+  </body>
 </html>

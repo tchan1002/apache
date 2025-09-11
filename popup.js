@@ -31,6 +31,10 @@ const MAX_LOG_ENTRIES = 100;
 let voiceTimeout = null;
 const VOICE_TIMEOUT_MS = 10000; // 10 seconds of silence
 
+// Wake word detection
+let wakeWordDetected = false;
+const WAKE_WORDS = ['hey sherpa', 'hey sherpa 2', 'sherpa'];
+
 // Initialize on load
 document.addEventListener('DOMContentLoaded', async () => {
   addDebugLog('🌲 Sherpa 2 (Apache) - Voice-First Assistant loaded');
@@ -48,6 +52,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Set up click handler
   sherpaCircle.addEventListener('click', handleSherpaClick);
+  
+  // Add spacebar support for voice input
+  document.addEventListener('keydown', handleSpaceKey);
   
   // Update initial state
   updateState('idle');
@@ -92,6 +99,25 @@ async function initializeVoiceRecognition() {
   }
 }
 
+// Handle Space key press for voice input
+function handleSpaceKey(event) {
+  if (event.code === 'Space') {
+    // Prevent default space behavior (scrolling)
+    event.preventDefault();
+    
+    if (currentState === 'idle' || currentState === 'ready') {
+      addDebugLog('⌨️ Space key pressed - starting voice input');
+      startListening();
+    } else if (currentState === 'listening') {
+      addDebugLog('⌨️ Space key pressed - stopping voice input');
+      stopListening();
+    } else if (currentState === 'error') {
+      addDebugLog('⌨️ Space key pressed - retrying voice recognition');
+      initializeVoiceRecognition();
+    }
+  }
+}
+
 // Handle Sherpa circle click
 async function handleSherpaClick() {
   addDebugLog('🖱️ Sherpa circle clicked');
@@ -125,7 +151,6 @@ async function startListening() {
     if (hasAccess) {
       addDebugLog('🎤 Microphone access confirmed - mic working!');
       microphonePermissionGranted = true;
-      updateState('ready');
       addDebugLog('🎤 Mic working - ready for voice input');
     } else {
       addDebugLog('🎤 Microphone access denied, opening permission page...');
@@ -288,8 +313,19 @@ function handleVoiceStart() {
 }
 
 function handleVoiceResult(event) {
-  const transcript = event.results[0][0].transcript;
+  const transcript = event.results[0][0].transcript.toLowerCase().trim();
   addDebugLog(`🎤 Voice input received: "${transcript}"`);
+  
+  // Check for wake words
+  const containsWakeWord = WAKE_WORDS.some(wakeWord =>
+    transcript.includes(wakeWord.toLowerCase())
+  );
+  
+  if (containsWakeWord && !wakeWordDetected) {
+    wakeWordDetected = true;
+    addDebugLog(`🎤 Wake word detected: "${transcript}"`);
+    return; // Continue listening for the actual command
+  }
   
   // Update last transcript time
   if (voiceTimeout) {
@@ -332,6 +368,7 @@ function handleVoiceError(event) {
 function handleVoiceEnd() {
   addDebugLog('🎤 Voice recognition ended');
   isListening = false;
+  wakeWordDetected = false; // Reset wake word detection
   updateState('ready');
   
   // Clear timeout
@@ -553,7 +590,7 @@ function updateState(state) {
     switch (state) {
     case 'idle':
       sherpaIcon.textContent = '○';
-      statusText.textContent = 'Click to activate';
+      statusText.textContent = 'Ready';
       break;
       case 'listening':
       sherpaIcon.textContent = '●';
