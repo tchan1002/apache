@@ -7,7 +7,10 @@ console.log('🌲 Sherpa 2 (Apache) content script loaded');
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('📨 Content script received message:', request);
   
-  if (request.action === 'searchOnPage') {
+  if (request.action === 'test') {
+    console.log('✅ Content script test message received');
+    sendResponse({ success: true, message: 'Content script is ready' });
+  } else if (request.action === 'searchOnPage') {
     const result = searchOnPage(request.searchTerm);
     sendResponse(result);
   } else if (request.action === 'scrapePage') {

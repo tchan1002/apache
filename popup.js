@@ -74,6 +74,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Start listening automatically
   addDebugLog('🎤 Starting automatic voice recognition...');
   await startListening();
+  
+  // Set up periodic state checking to ensure UI reflects microphone status
+  setInterval(ensureMicrophoneState, 1000);
 });
 
 // Initialize voice recognition
@@ -183,7 +186,7 @@ async function startListening() {
   }
   
   try {
-    addDebugLog('🎤 Starting continuous voice recognition...');
+    addDebugLog('🎤 Starting continuous voice recognition - microphone will begin recording...');
     isListening = true;
     updateState('listening');
     
@@ -193,6 +196,7 @@ async function startListening() {
     recognition.start();
   } catch (error) {
     addDebugLog(`🍂 Voice recognition start error: ${error.message}`);
+    isListening = false;
     updateState('error');
   }
 }
@@ -200,7 +204,7 @@ async function startListening() {
 // Stop listening
 function stopListening() {
   if (recognition && isListening) {
-    console.log('🎤 Stopping voice recognition...');
+    addDebugLog('🎤 Stopping voice recognition - microphone will stop recording...');
     recognition.stop();
   }
   
@@ -315,8 +319,12 @@ async function testMicrophoneAccess() {
 
 // Voice recognition event handlers
 function handleVoiceStart() {
-  addDebugLog('🎤 Voice recognition started');
-  updateState('listening');
+  addDebugLog('🎤 Voice recognition started - microphone actively recording');
+  isListening = true;
+  // Ensure we're in listening state when mic is active
+  if (currentState !== 'listening') {
+    updateState('listening');
+  }
 }
 
 function handleVoiceResult(event) {
@@ -325,8 +333,18 @@ function handleVoiceResult(event) {
   const transcript = result[0].transcript.toLowerCase().trim();
   const isFinal = result.isFinal;
   
-  // Only process final results to avoid processing partial speech
+  // Ensure we're in listening state when processing speech
+  if (isListening && currentState !== 'listening' && currentState !== 'processing') {
+    updateState('listening');
+  }
+  
+  // Show that we're actively processing speech
   if (!isFinal) {
+    addDebugLog(`🎤 Microphone actively recording: "${transcript}..."`);
+    // Show picking up state when actively recording
+    if (currentState !== 'picking-up') {
+      updateState('picking-up');
+    }
     return;
   }
   
@@ -354,6 +372,10 @@ function handleVoiceResult(event) {
     processVoiceCommand(transcript);
   } else {
     addDebugLog(`🎤 Ignoring speech (no wake word or clear command): "${transcript}"`);
+    // Stay in listening state if we're ignoring speech
+    if (isListening) {
+      updateState('listening');
+    }
   }
 }
 
@@ -410,10 +432,14 @@ function handleVoiceError(event) {
 }
 
 function handleVoiceEnd() {
-  addDebugLog('🎤 Voice recognition ended - restarting continuous listening');
+  addDebugLog('🎤 Voice recognition ended - microphone stopped recording');
   isListening = false;
   wakeWordDetected = false; // Reset wake word detection
-  updateState('ready');
+  
+  // Only update state if we're not processing a command
+  if (currentState !== 'processing') {
+    updateState('ready');
+  }
   
   // No timeout in continuous mode
   
@@ -421,10 +447,11 @@ function handleVoiceEnd() {
   setTimeout(() => {
     if (isVoiceSupported && recognition) {
       try {
-        addDebugLog('🔄 Restarting continuous voice recognition...');
+        addDebugLog('🔄 Restarting continuous voice recognition - microphone will resume recording');
         recognition.start();
         } catch (error) {
         addDebugLog(`🍂 Failed to restart continuous recognition: ${error.message}`);
+        updateState('error');
       }
     }
   }, 100);
@@ -433,6 +460,8 @@ function handleVoiceEnd() {
 // Process voice commands
 async function processVoiceCommand(transcript) {
   addDebugLog(`🧠 Processing voice command: "${transcript}"`);
+  // Ensure we're not listening while processing
+  isListening = false;
   updateState('processing');
   
   const command = transcript.toLowerCase().trim();
@@ -474,6 +503,19 @@ async function processVoiceCommand(transcript) {
     speakResponse("Sorry, I couldn't process that command. Please try again.");
     updateState('ready');
   }
+  
+  // Restart listening after processing
+  setTimeout(() => {
+    if (isVoiceSupported && recognition && !isListening) {
+      try {
+        addDebugLog('🔄 Restarting listening after command processing');
+        isListening = true;
+        recognition.start();
+      } catch (error) {
+        addDebugLog(`🍂 Failed to restart listening: ${error.message}`);
+      }
+    }
+  }, 500);
 }
 
 // Handle navigation commands
@@ -656,41 +698,54 @@ function updateState(state) {
   currentState = state;
   
   // Remove all state classes
-  sherpaCircle.classList.remove('listening', 'processing', 'ready', 'error');
-  statusText.classList.remove('listening', 'processing', 'ready', 'error');
+  sherpaCircle.classList.remove('listening', 'processing', 'ready', 'error', 'idle', 'picking-up');
+  statusText.classList.remove('listening', 'processing', 'ready', 'error', 'idle', 'picking-up');
   
-  // Add new state class
-  if (state !== 'idle') {
-    sherpaCircle.classList.add(state);
-    statusText.classList.add(state);
-  }
+  // Always add the state class
+  sherpaCircle.classList.add(state);
+  statusText.classList.add(state);
   
-  // Update icon and text
-    switch (state) {
+  // Update icon and text based on microphone status
+  switch (state) {
     case 'idle':
       sherpaIcon.textContent = '○';
       statusText.textContent = 'Ready';
       break;
-      case 'listening':
+    case 'listening':
       sherpaIcon.textContent = '●';
-      statusText.textContent = 'Listening...';
-        break;
-      case 'processing':
+      statusText.textContent = '🎤 Listening...';
+      break;
+    case 'picking-up':
+      sherpaIcon.textContent = '●';
+      statusText.textContent = '🎤 Picking up speech...';
+      break;
+    case 'processing':
       sherpaIcon.textContent = '◐';
-      statusText.textContent = 'Processing...';
-        break;
-      case 'ready':
-      sherpaIcon.textContent = '○';
+      statusText.textContent = '🧠 Processing...';
+      break;
+    case 'ready':
+      sherpaIcon.textContent = '●';
       if (microphonePermissionGranted) {
-        statusText.textContent = 'Mic working - Ready to help';
-  } else {
+        statusText.textContent = '🎤 Mic working - Ready to help';
+      } else {
         statusText.textContent = 'Ready to help';
       }
-        break;
+      break;
     case 'error':
       sherpaIcon.textContent = '▲';
       statusText.textContent = 'Error - Click to retry';
       break;
+  }
+}
+
+// Ensure UI state reflects microphone activity
+function ensureMicrophoneState() {
+  if (isListening && currentState !== 'listening' && currentState !== 'processing' && currentState !== 'picking-up') {
+    addDebugLog('🔄 Correcting state - microphone is active but UI shows wrong state');
+    updateState('listening');
+  } else if (!isListening && (currentState === 'listening' || currentState === 'picking-up')) {
+    addDebugLog('🔄 Correcting state - microphone is not active but UI shows listening/picking-up');
+    updateState('ready');
   }
 }
 
@@ -767,7 +822,7 @@ async function copyDebugLog() {
     copyLogBtnEl.textContent = '✅ Copied!';
     copyLogBtnEl.style.background = '#16a34a';
     
-    setTimeout(() => {
+  setTimeout(() => {
       copyLogBtnEl.textContent = originalText;
       copyLogBtnEl.style.background = '#404040';
     }, 1500);
@@ -785,7 +840,7 @@ function toggleDebugLog() {
   if (debugEl.classList.contains('collapsed')) {
     logToggleIconEl.textContent = '+';
     addDebugLog('🌲 Debug log collapsed');
-      } else {
+  } else {
     logToggleIconEl.textContent = '−';
     addDebugLog('🌲 Debug log expanded');
   }
@@ -799,35 +854,71 @@ async function scrapeCurrentPage() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const tabUrl = tab.url;
     
-    if (!tabUrl || tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://')) {
-      addDebugLog('🍂 Cannot scrape this page type');
+    if (!tabUrl || tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://') || tabUrl.startsWith('moz-extension://') || tabUrl.startsWith('edge://')) {
+      addDebugLog('🍂 Cannot scrape this page type - browser internal page');
+      return;
+    }
+    
+    addDebugLog(`🌐 Attempting to scrape page: ${tabUrl}`);
+    
+    // Check if page might have security restrictions
+    if (tabUrl.startsWith('https://') && !tabUrl.includes('localhost')) {
+      addDebugLog('🔒 HTTPS page detected - checking for security restrictions');
+    } else if (tabUrl.startsWith('http://')) {
+      addDebugLog('⚠️ HTTP page detected - may have mixed content issues');
+    }
+
+    // Check if content script is already loaded
+    try {
+      // Try to send a test message first
+      const testResponse = await chrome.tabs.sendMessage(tab.id, {
+        action: 'test'
+      });
+      addDebugLog('📄 Content script already loaded and responding');
+    } catch (testError) {
+      // Content script not loaded, try to inject it
+      addDebugLog(`📄 Content script not responding, attempting injection. Error: ${testError.message}`);
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content.js']
+        });
+        addDebugLog('📄 Content script injected successfully');
+        
+        // Wait a bit longer after injection
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Test again after injection
+        try {
+          const testResponse2 = await chrome.tabs.sendMessage(tab.id, {
+            action: 'test'
+          });
+          addDebugLog('✅ Content script responding after injection');
+        } catch (testError2) {
+          addDebugLog(`🍂 Content script still not responding after injection: ${testError2.message}`);
     return;
   }
-
-    // Inject content script if not already present
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content.js']
-      });
-      addDebugLog('📄 Content script injected');
-    } catch (injectError) {
-      // Content script might already be injected, that's okay
-      addDebugLog('📄 Content script already present or injection failed');
+      } catch (injectError) {
+        addDebugLog(`🍂 Content script injection failed: ${injectError.message}`);
+    return;
+      }
     }
     
     // Wait a moment for content script to initialize
     await new Promise(resolve => setTimeout(resolve, 500));
     
     // Send message to content script to scrape the page with timeout
+    addDebugLog('📤 Sending scrapePage message to content script...');
     const response = await Promise.race([
       chrome.tabs.sendMessage(tab.id, {
         action: 'scrapePage'
       }),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Content script timeout')), 3000)
+        setTimeout(() => reject(new Error('Content script timeout')), 5000)
       )
     ]);
+    
+    addDebugLog(`📥 Received response from content script: ${JSON.stringify(response)}`);
     
     if (response && response.success) {
       pageMap = {
