@@ -5,10 +5,20 @@ console.log('🌲 Sherpa 2 (Apache) content script loaded');
 
 // Listen for messages from the popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('📨 Content script received message:', request);
+  
   if (request.action === 'searchOnPage') {
     const result = searchOnPage(request.searchTerm);
     sendResponse(result);
+  } else if (request.action === 'scrapePage') {
+    console.log('🔍 Content script starting page scrape...');
+    const result = scrapePage();
+    console.log('📄 Content script scrape result:', result);
+    sendResponse(result);
   }
+  
+  // Return true to indicate we will send a response asynchronously
+  return true;
 });
 
 // Search for elements on the current page
@@ -210,6 +220,117 @@ function clearHighlights() {
     element.style.transform = '';
     element.removeAttribute('data-sherpa-highlight');
   });
+}
+
+// Scrape page for links and content
+function scrapePage() {
+  console.log('🔍 Scraping page for links and content...');
+  
+  try {
+    const title = document.title || 'Untitled Page';
+    const links = [];
+    const headings = [];
+    
+    // Extract all links
+    const linkElements = document.querySelectorAll('a[href]');
+    linkElements.forEach(link => {
+      const href = link.href;
+      const text = link.textContent.trim();
+      
+      // Skip empty links and javascript links
+      if (text && !href.startsWith('javascript:') && !href.startsWith('#')) {
+        links.push({
+          text: text,
+          href: href,
+          title: link.title || ''
+        });
+      }
+    });
+    
+    // Extract headings
+    const headingElements = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    headingElements.forEach(heading => {
+      const text = heading.textContent.trim();
+      if (text) {
+        headings.push({
+          level: parseInt(heading.tagName.charAt(1)),
+          text: text
+        });
+      }
+    });
+    
+    // Remove duplicates and sort by relevance
+    const uniqueLinks = removeDuplicateLinks(links);
+    const sortedLinks = sortLinksByRelevance(uniqueLinks);
+    
+    console.log(`📄 Scraped: "${title}" - ${sortedLinks.length} links, ${headings.length} headings`);
+    
+    return {
+      success: true,
+      title: title,
+      links: sortedLinks,
+      headings: headings
+    };
+    
+  } catch (error) {
+    console.error('🍂 Page scraping error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+// Remove duplicate links based on href
+function removeDuplicateLinks(links) {
+  const seen = new Set();
+  return links.filter(link => {
+    if (seen.has(link.href)) {
+      return false;
+    }
+    seen.add(link.href);
+    return true;
+  });
+}
+
+// Sort links by relevance (shorter, more descriptive text first)
+function sortLinksByRelevance(links) {
+  return links.sort((a, b) => {
+    // Prioritize links with meaningful text
+    const aScore = calculateLinkRelevanceScore(a);
+    const bScore = calculateLinkRelevanceScore(b);
+    return bScore - aScore;
+  });
+}
+
+// Calculate relevance score for a link
+function calculateLinkRelevanceScore(link) {
+  let score = 0;
+  const text = link.text.toLowerCase();
+  
+  // Longer text is generally more descriptive
+  score += Math.min(text.length, 50);
+  
+  // Penalize very short text (likely not descriptive)
+  if (text.length < 3) score -= 20;
+  
+  // Bonus for common navigation terms
+  const navTerms = ['home', 'about', 'contact', 'services', 'products', 'blog', 'news', 'help', 'support'];
+  if (navTerms.some(term => text.includes(term))) {
+    score += 10;
+  }
+  
+  // Bonus for links that look like buttons or navigation
+  if (text.match(/^(click|go|view|read|learn|get|find|search|browse)/i)) {
+    score += 5;
+  }
+  
+  // Penalize links with just URLs or numbers
+  if (text.match(/^https?:\/\//) || text.match(/^\d+$/)) {
+    score -= 15;
+  }
+  
+  return score;
 }
 
 // Add CSS for highlighting

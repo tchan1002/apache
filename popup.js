@@ -27,13 +27,22 @@ let logBuffer = [];
 let logUpdateInterval = null;
 const MAX_LOG_ENTRIES = 100;
 
-// Voice recognition timeout
-let voiceTimeout = null;
-const VOICE_TIMEOUT_MS = 10000; // 10 seconds of silence
+// Voice recognition timeout (not used in continuous mode)
+// let voiceTimeout = null;
+// const VOICE_TIMEOUT_MS = 10000; // 10 seconds of silence
 
 // Wake word detection
 let wakeWordDetected = false;
-const WAKE_WORDS = ['hey sherpa', 'hey sherpa 2', 'sherpa'];
+const WAKE_WORDS = ['hey sherpa', 'sherpa', 'apache', 'hey'];
+
+// Page scraping and link mapping
+let pageMap = {
+  title: '',
+  url: '',
+  links: [],
+  headings: [],
+  lastScraped: null
+};
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', async () => {
@@ -47,6 +56,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.body.classList.remove('log-expanded');
   logToggleIconEl.textContent = '+';
   
+  // Make sure toggle button is visible
+  logToggleBtnEl.style.display = 'block';
+  
   // Initialize voice recognition
   await initializeVoiceRecognition();
   
@@ -56,8 +68,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Add spacebar support for voice input
   document.addEventListener('keydown', handleSpaceKey);
   
-  // Update initial state
-  updateState('idle');
+  // Scrape current page for links and content
+  await scrapeCurrentPage();
+  
+  // Start listening automatically
+  addDebugLog('🎤 Starting automatic voice recognition...');
+  await startListening();
 });
 
 // Initialize voice recognition
@@ -74,9 +90,9 @@ async function initializeVoiceRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SpeechRecognition();
       
-      // Configure recognition settings
-      recognition.continuous = false;
-      recognition.interimResults = false;
+      // Configure recognition settings for always listening
+      recognition.continuous = true;
+      recognition.interimResults = true;
       recognition.lang = 'en-US';
       
       // Set up event handlers
@@ -86,7 +102,7 @@ async function initializeVoiceRecognition() {
       recognition.onend = handleVoiceEnd;
       
       addDebugLog('🎤 Voice recognition initialized successfully');
-      updateState('ready');
+      updateState('idle');
   } catch (error) {
       addDebugLog(`🍂 Voice recognition initialization failed: ${error.message}`);
       isVoiceSupported = false;
@@ -167,12 +183,12 @@ async function startListening() {
   }
   
   try {
-    addDebugLog('🎤 Starting voice recognition...');
+    addDebugLog('🎤 Starting continuous voice recognition...');
     isListening = true;
     updateState('listening');
     
-    // Start timeout for silence detection
-    startVoiceTimeout();
+    // No timeout needed for continuous mode
+    addDebugLog('🎤 Microphone ready for continuous voice input!');
     
     recognition.start();
   } catch (error) {
@@ -210,9 +226,9 @@ async function requestMicrophonePermission() {
       if (chrome.runtime.lastError) {
         addDebugLog(`🍂 Failed to open permission tab: ${chrome.runtime.lastError.message}`);
         reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-      
+      return;
+    }
+    
       addDebugLog(`🎤 Permission tab opened with ID: ${tab.id}`);
       
       // Listen for messages from the permission tab
@@ -254,7 +270,7 @@ async function requestMicrophonePermission() {
       };
       
       // Timeout after 60 seconds
-      setTimeout(() => {
+  setTimeout(() => {
         addDebugLog('🍂 Permission request timed out');
         cleanup();
         chrome.tabs.remove(tab.id);
@@ -295,16 +311,7 @@ async function testMicrophoneAccess() {
 }
 
 // Start voice timeout
-function startVoiceTimeout() {
-  if (voiceTimeout) {
-    clearTimeout(voiceTimeout);
-  }
-  
-  voiceTimeout = setTimeout(() => {
-    console.log('🎤 Voice timeout - stopping due to silence');
-    stopListening();
-  }, VOICE_TIMEOUT_MS);
-}
+// Voice timeout function removed - not needed in continuous mode
 
 // Voice recognition event handlers
 function handleVoiceStart() {
@@ -313,28 +320,65 @@ function handleVoiceStart() {
 }
 
 function handleVoiceResult(event) {
-  const transcript = event.results[0][0].transcript.toLowerCase().trim();
+  // Get the latest result (most recent speech)
+  const result = event.results[event.results.length - 1];
+  const transcript = result[0].transcript.toLowerCase().trim();
+  const isFinal = result.isFinal;
+  
+  // Only process final results to avoid processing partial speech
+  if (!isFinal) {
+    return;
+  }
+  
   addDebugLog(`🎤 Voice input received: "${transcript}"`);
   
   // Check for wake words
-  const containsWakeWord = WAKE_WORDS.some(wakeWord =>
-    transcript.includes(wakeWord.toLowerCase())
-  );
+  const containsWakeWord = WAKE_WORDS.some(wakeWord => {
+    return transcript.includes(wakeWord.toLowerCase());
+  });
+  
+  // Check for clear command patterns (commands that don't need wake words)
+  const isClearCommand = isClearCommandPattern(transcript);
   
   if (containsWakeWord && !wakeWordDetected) {
     wakeWordDetected = true;
     addDebugLog(`🎤 Wake word detected: "${transcript}"`);
+    speakResponse("I'm listening. What can I help you with?");
+    updateState('ready');
     return; // Continue listening for the actual command
   }
   
-  // Update last transcript time
-  if (voiceTimeout) {
-    clearTimeout(voiceTimeout);
-    startVoiceTimeout();
+  // Process commands if wake word was detected or it's a clear command
+  if (wakeWordDetected || isClearCommand) {
+    addDebugLog(`🎤 Processing command: "${transcript}"`);
+    processVoiceCommand(transcript);
+  } else {
+    addDebugLog(`🎤 Ignoring speech (no wake word or clear command): "${transcript}"`);
   }
+}
+
+// Check if speech contains clear command patterns
+function isClearCommandPattern(transcript) {
+  const clearCommandPatterns = [
+    'take me to',
+    'go to',
+    'navigate to',
+    'where is',
+    'find',
+    'show me',
+    'what links',
+    'show links',
+    'available links',
+    'analyze page',
+    'what\'s on this page',
+    'page summary',
+    'help',
+    'what can you do'
+  ];
   
-  // Process the voice command
-  processVoiceCommand(transcript);
+  return clearCommandPatterns.some(pattern => 
+    transcript.includes(pattern.toLowerCase())
+  );
 }
 
 function handleVoiceError(event) {
@@ -366,16 +410,24 @@ function handleVoiceError(event) {
 }
 
 function handleVoiceEnd() {
-  addDebugLog('🎤 Voice recognition ended');
+  addDebugLog('🎤 Voice recognition ended - restarting continuous listening');
   isListening = false;
   wakeWordDetected = false; // Reset wake word detection
   updateState('ready');
   
-  // Clear timeout
-  if (voiceTimeout) {
-    clearTimeout(voiceTimeout);
-    voiceTimeout = null;
-  }
+  // No timeout in continuous mode
+  
+  // Restart continuous listening after a short delay
+  setTimeout(() => {
+    if (isVoiceSupported && recognition) {
+      try {
+        addDebugLog('🔄 Restarting continuous voice recognition...');
+        recognition.start();
+        } catch (error) {
+        addDebugLog(`🍂 Failed to restart continuous recognition: ${error.message}`);
+      }
+    }
+  }, 100);
 }
 
 // Process voice commands
@@ -386,14 +438,6 @@ async function processVoiceCommand(transcript) {
   const command = transcript.toLowerCase().trim();
   
   try {
-    // Check for wake word
-    if (command.includes('hey sherpa') || command.includes('hey sherpa 2')) {
-      addDebugLog('🎯 Wake word detected');
-      speakResponse("I'm listening. What can I help you with?");
-      updateState('ready');
-      return;
-    }
-    
     // Navigation commands
     if (command.includes('take me to') || command.includes('go to') || command.includes('navigate to')) {
       addDebugLog('🧭 Processing navigation command');
@@ -403,6 +447,16 @@ async function processVoiceCommand(transcript) {
     else if (command.includes('where is') || command.includes('find') || command.includes('show me')) {
       addDebugLog('🔍 Processing on-page command');
       await handleOnPageCommand(command);
+    }
+    // Link suggestions
+    else if (command.includes('what links') || command.includes('show links') || command.includes('available links')) {
+      addDebugLog('🔗 Processing link suggestions command');
+      await handleLinkSuggestionsCommand(command);
+    }
+    // Page analysis
+    else if (command.includes('analyze page') || command.includes('what\'s on this page') || command.includes('page summary')) {
+      addDebugLog('📄 Processing page analysis command');
+      await handlePageAnalysisCommand(command);
     }
     // General help
     else if (command.includes('help') || command.includes('what can you do')) {
@@ -415,7 +469,7 @@ async function processVoiceCommand(transcript) {
       await handleWebSearchCommand(command);
       }
       
-  } catch (error) {
+        } catch (error) {
     addDebugLog(`🍂 Error processing voice command: ${error.message}`);
     speakResponse("Sorry, I couldn't process that command. Please try again.");
     updateState('ready');
@@ -445,7 +499,34 @@ async function handleNavigationCommand(command) {
     return;
   }
   
-  // Try to construct URL
+  // First, check if we have scraped links and can find a match
+  if (pageMap.links.length === 0) {
+    addDebugLog('🔍 No links cached, attempting to scrape page...');
+    await scrapeCurrentPageWithRetry();
+  }
+  
+  if (pageMap.links.length > 0) {
+    const matchingLinks = findMatchingLinks(destination);
+    
+    if (matchingLinks.length > 0) {
+      const bestMatch = matchingLinks[0];
+      addDebugLog(`🔗 Found matching link: "${bestMatch.text}" -> ${bestMatch.href}`);
+      
+      speakResponse(`I found a link for "${destination}". Taking you to ${bestMatch.text}.`);
+      
+      try {
+        await chrome.tabs.create({ url: bestMatch.href, active: false });
+        addDebugLog('✅ Navigation to scraped link successful - opened in background tab');
+        updateState('ready');
+        return;
+      } catch (error) {
+        addDebugLog(`🍂 Navigation to scraped link error: ${error.message}`);
+        // Fall through to regular navigation
+      }
+    }
+  }
+  
+  // Fallback to regular URL construction
   let url = destination;
   
   // Add protocol if missing
@@ -466,9 +547,8 @@ async function handleNavigationCommand(command) {
   
   // Navigate to the URL
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    await chrome.tabs.update(tab.id, { url: url });
-    addDebugLog('✅ Navigation successful');
+    await chrome.tabs.create({ url: url, active: false });
+    addDebugLog('✅ Navigation successful - opened in background tab');
     updateState('ready');
     } catch (error) {
     addDebugLog(`🍂 Navigation error: ${error.message}`);
@@ -492,9 +572,9 @@ async function handleOnPageCommand(command) {
     addDebugLog('❓ No search term provided');
     speakResponse("What would you like me to find on this page?");
     updateState('ready');
-    return;
-  }
-  
+      return;
+    }
+    
   addDebugLog(`🔍 Searching for: "${searchTerm}"`);
   speakResponse(`Looking for ${searchTerm} on this page`);
   
@@ -529,7 +609,7 @@ async function handleOnPageCommand(command) {
 function handleHelpCommand() {
   addDebugLog('❓ Handling help command');
   
-  const helpText = "I can help you navigate to websites, find elements on pages, or search the web. Try saying 'take me to google.com' or 'find the search button'.";
+  const helpText = "I can help you navigate to websites, find elements on pages, analyze the current page, and suggest links. Try saying 'take me to google.com', 'what links are available', 'analyze this page', or 'find the search button'.";
   speakResponse(helpText);
   updateState('ready');
 }
@@ -545,9 +625,8 @@ async function handleWebSearchCommand(command) {
   addDebugLog(`🔍 Search URL: ${searchUrl}`);
   
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    await chrome.tabs.update(tab.id, { url: searchUrl });
-    addDebugLog('✅ Web search navigation successful');
+    await chrome.tabs.create({ url: searchUrl, active: false });
+    addDebugLog('✅ Web search navigation successful - opened in background tab');
     updateState('ready');
   } catch (error) {
     addDebugLog(`🍂 Web search error: ${error.message}`);
@@ -604,7 +683,7 @@ function updateState(state) {
       sherpaIcon.textContent = '○';
       if (microphonePermissionGranted) {
         statusText.textContent = 'Mic working - Ready to help';
-      } else {
+  } else {
         statusText.textContent = 'Ready to help';
       }
         break;
@@ -677,9 +756,9 @@ async function copyDebugLog() {
     const logText = logBuffer.join('\n');
     if (!logText.trim()) {
       addDebugLog('🍂 No log content to copy');
-      return;
-    }
-    
+    return;
+  }
+
     await navigator.clipboard.writeText(logText);
     addDebugLog('📋 Log copied to clipboard!');
     
@@ -706,8 +785,240 @@ function toggleDebugLog() {
   if (debugEl.classList.contains('collapsed')) {
     logToggleIconEl.textContent = '+';
     addDebugLog('🌲 Debug log collapsed');
-  } else {
+      } else {
     logToggleIconEl.textContent = '−';
     addDebugLog('🌲 Debug log expanded');
   }
+}
+
+// Page scraping and analysis functions
+async function scrapeCurrentPage() {
+  addDebugLog('🔍 Scraping current page for links and content...');
+  
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabUrl = tab.url;
+    
+    if (!tabUrl || tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://')) {
+      addDebugLog('🍂 Cannot scrape this page type');
+    return;
+  }
+
+    // Inject content script if not already present
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content.js']
+      });
+      addDebugLog('📄 Content script injected');
+    } catch (injectError) {
+      // Content script might already be injected, that's okay
+      addDebugLog('📄 Content script already present or injection failed');
+    }
+    
+    // Wait a moment for content script to initialize
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Send message to content script to scrape the page with timeout
+    const response = await Promise.race([
+      chrome.tabs.sendMessage(tab.id, {
+        action: 'scrapePage'
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Content script timeout')), 3000)
+      )
+    ]);
+    
+    if (response && response.success) {
+      pageMap = {
+        title: response.title,
+        url: tabUrl,
+        links: response.links,
+        headings: response.headings,
+        lastScraped: Date.now()
+      };
+      
+      addDebugLog(`📄 Page scraped: "${pageMap.title}"`);
+      addDebugLog(`🔗 Found ${pageMap.links.length} links and ${pageMap.headings.length} headings`);
+      
+      // Log some example links for debugging
+      if (pageMap.links.length > 0) {
+        const sampleLinks = pageMap.links.slice(0, 3).map(link => `"${link.text}" -> ${link.href}`);
+        addDebugLog(`🔗 Sample links: ${sampleLinks.join(', ')}`);
+      }
+    } else {
+      addDebugLog('🍂 Failed to scrape page - no response from content script');
+    }
+  } catch (error) {
+    if (error.message.includes('Receiving end does not exist')) {
+      addDebugLog('🍂 Content script not ready - will retry when needed');
+      } else {
+      addDebugLog(`🍂 Page scraping error: ${error.message}`);
+    }
+  }
+}
+
+// Handle link suggestions command
+async function handleLinkSuggestionsCommand(command) {
+  addDebugLog(`🔗 Handling link suggestions: "${command}"`);
+  
+  if (pageMap.links.length === 0) {
+    speakResponse("I haven't found any links on this page yet. Let me analyze it first.");
+    await scrapeCurrentPageWithRetry();
+    if (pageMap.links.length === 0) {
+      speakResponse("I still don't see any links on this page.");
+      updateState('ready');
+    return;
+    }
+  }
+  
+  // Extract what the user is looking for
+  const searchTerm = command
+    .replace(/what links|show links|available links|links for|find links/gi, '')
+    .trim();
+  
+  if (!searchTerm) {
+    // Show all links
+    const linkTexts = pageMap.links.slice(0, 5).map(link => link.text).join(', ');
+    speakResponse(`Here are the main links on this page: ${linkTexts}`);
+  } else {
+    // Find matching links
+    const matchingLinks = findMatchingLinks(searchTerm);
+    
+    if (matchingLinks.length > 0) {
+      const suggestions = matchingLinks.slice(0, 3).map(link => link.text).join(', ');
+      speakResponse(`I found these links related to "${searchTerm}": ${suggestions}`);
+    } else {
+      speakResponse(`I couldn't find any links related to "${searchTerm}" on this page.`);
+    }
+  }
+  
+  updateState('ready');
+}
+
+// Handle page analysis command
+async function handlePageAnalysisCommand(command) {
+  addDebugLog(`📄 Handling page analysis: "${command}"`);
+  
+  if (pageMap.links.length === 0) {
+    await scrapeCurrentPageWithRetry();
+  }
+  
+  const analysis = generatePageAnalysis();
+  speakResponse(analysis);
+  updateState('ready');
+}
+
+// Scrape page with retry mechanism
+async function scrapeCurrentPageWithRetry() {
+  addDebugLog('🔍 Attempting to scrape page with retry...');
+  
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    addDebugLog(`🔄 Scraping attempt ${attempt}/3`);
+    await scrapeCurrentPage();
+    
+    if (pageMap.links.length > 0) {
+      addDebugLog('✅ Page scraping successful');
+    return;
+  }
+  
+    if (attempt < 3) {
+      addDebugLog('⏳ Waiting before retry...');
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+  
+  addDebugLog('🍂 Page scraping failed after 3 attempts');
+}
+
+// Find links that match a search term
+function findMatchingLinks(searchTerm) {
+  const term = searchTerm.toLowerCase();
+  
+  return pageMap.links.filter(link => {
+    const text = link.text.toLowerCase();
+    const href = link.href.toLowerCase();
+    
+    return text.includes(term) || 
+           href.includes(term) ||
+           text.split(' ').some(word => word.includes(term)) ||
+           term.split(' ').some(word => text.includes(word));
+  }).sort((a, b) => {
+    // Prioritize exact matches and shorter, more relevant text
+    const aScore = calculateRelevanceScore(a.text, term);
+    const bScore = calculateRelevanceScore(b.text, term);
+    return bScore - aScore;
+  });
+}
+
+// Calculate relevance score for link matching
+function calculateRelevanceScore(text, term) {
+  const lowerText = text.toLowerCase();
+  const lowerTerm = term.toLowerCase();
+  
+  let score = 0;
+  
+  // Exact match gets highest score
+  if (lowerText === lowerTerm) score += 100;
+  
+  // Starts with term gets high score
+  if (lowerText.startsWith(lowerTerm)) score += 50;
+  
+  // Contains term gets medium score
+  if (lowerText.includes(lowerTerm)) score += 25;
+  
+  // Word boundary matches get bonus
+  const wordBoundaryRegex = new RegExp(`\\b${lowerTerm}\\b`, 'i');
+  if (wordBoundaryRegex.test(lowerText)) score += 15;
+  
+  // Shorter text gets slight bonus (more concise)
+  score += Math.max(0, 20 - text.length / 2);
+  
+  return score;
+}
+
+// Generate page analysis summary
+function generatePageAnalysis() {
+  const linkCount = pageMap.links.length;
+  const headingCount = pageMap.headings.length;
+  
+  let analysis = `This page is titled "${pageMap.title}". `;
+  
+  if (linkCount > 0) {
+    analysis += `I found ${linkCount} links on this page. `;
+    
+    // Categorize links
+    const internalLinks = pageMap.links.filter(link => 
+      link.href.startsWith('/') || link.href.includes(new URL(pageMap.url).hostname)
+    ).length;
+    
+    const externalLinks = linkCount - internalLinks;
+    
+    if (internalLinks > 0) {
+      analysis += `${internalLinks} are internal links to other parts of this site. `;
+    }
+    if (externalLinks > 0) {
+      analysis += `${externalLinks} are external links to other websites. `;
+    }
+  }
+  
+  if (headingCount > 0) {
+    analysis += `The page has ${headingCount} headings that organize the content. `;
+  }
+  
+  // Suggest some key links
+  if (linkCount > 0) {
+    const keyLinks = pageMap.links
+      .filter(link => link.text.length > 3 && link.text.length < 50)
+      .slice(0, 3)
+      .map(link => link.text);
+    
+    if (keyLinks.length > 0) {
+      analysis += `Some key links include: ${keyLinks.join(', ')}. `;
+    }
+  }
+  
+  analysis += "You can ask me to find specific links or navigate to any of them.";
+  
+  return analysis;
 }
